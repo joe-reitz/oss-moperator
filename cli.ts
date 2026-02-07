@@ -52,7 +52,35 @@ async function chat(userMessage: string): Promise<string> {
 }
 
 async function main() {
-  console.log("\n  mOperator — Marketing Operations AI Agent\n")
+  console.log(`
+\x1b[32m         @@@                            @@@
+        @@  @@                        @@  #
+         @@   @@                    @@   @@
+           @#   @@                @@   #@
+             @=   @@            @@   =@
+              @@.   @@        @@   -@@
+                @@    @@    @@    @@
+                  @@    @@@@    @@
+                    @@   @    @@
+                      @@    @@
+                  @@@@    %#  @@@@
+                @%...*  =@@.  =...@@
+              @@=*#....@@  @@....#++@@
+          @@@-.:=.*#=.@@    @%.=*+.==.=@@@
+    @@*++=..+.+:*..:@@       @@@::.#:---..==++@@
+ %:+..=..+--+.*+=*.@@          @%::#++.*-.+..=..=:#@
+ @@@@@+..#+.@@.#...%@          @%...*.@@.*#..+@@@@@
+ @=.....-..%..:*=*.#@          @#.+=*:..%..:.....=@
+  @@@@%.*=:*.@.=.@*@@          @@*@:=.@.*:=+.@@@@@
+    @..*.@.+.=-.@                  @.=..*.%.*..@
+     @@@..=.@@@@@                  @@@@@.=..@@@
+       @@@@@                            @@@@@\x1b[0m
+
+              \x1b[1m┌┬┐┌─┐┌─┐┬─┐┌─┐┌┬┐┌─┐┬─┐\x1b[0m
+              \x1b[1m││││ │├─┘├┤ ├┬┘├─┤ │ │ │├┬┘\x1b[0m
+              \x1b[1m┴ ┴└─┘┴  └─┘┴└─┴ ┴ ┴ └─┘┴└─\x1b[0m
+         \x1b[90mMarketing Operations AI Agent\x1b[0m
+  `)
   console.log("  Your AI interface for Salesforce, Linear, GitHub, and more.")
   console.log("  Commands: 'clear' to reset, 'exit' to quit\n")
 

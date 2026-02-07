@@ -1,6 +1,10 @@
-# Connecting to Linear
+# Connecting Project Management Tools
 
-This guide explains how to connect mOperator to Linear so your team can file bugs and feature requests directly from Slack.
+mOperator can connect to project management tools so your team can file bugs and feature requests directly from Slack. This guide covers **Linear** as the built-in integration. The same pattern can be adapted for Asana, Monday.com, Jira, or any PM tool with an API — see [Adding Integrations](adding-integrations.md) for how to build your own.
+
+## Linear Setup
+
+This section walks you through connecting mOperator to Linear.
 
 ## Prerequisites
 

@@ -215,6 +215,16 @@ const THINKING_MESSAGES = [
   "Processing your request...",
   "Looking into that...",
   "Let me check...",
+  "Asking the magic 8-ball...",
+  "Beep boop beep...",
+  "Heavy lifting in progress...",
+  "Pulling the lever...",
+  "Casting query spells...",
+  "Science-ing this real quick...",
+  "Someone once did this manually, you know...",
+  "Hold my coffee...",
+  "Cold starting the vibes...",
+  "Performing light data archeology...",
 ]
 
 function getRandomThinkingMessage(): string {
