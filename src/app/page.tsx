@@ -295,12 +295,18 @@ GITHUB_REPO=owner/repo       # e.g., acme/marketing-site`}</pre>
                 </p>
               </div>
             </div>
-            <div className="pt-2">
+            <div className="pt-2 flex flex-col sm:flex-row gap-3">
               <Link
                 href="/docs/extending"
                 className="text-green-400 text-sm hover:underline"
               >
-                Read the integration guide &rarr;
+                Technical integration guide &rarr;
+              </Link>
+              <Link
+                href="/docs/design-your-own"
+                className="text-green-400 text-sm hover:underline"
+              >
+                Design your own with AI &rarr;
               </Link>
             </div>
           </div>

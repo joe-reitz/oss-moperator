@@ -11,7 +11,8 @@ const DOCS = [
   { slug: "project-management", file: "setup-linear.md", title: "Connect Project Management", step: "05" },
   { slug: "github", file: "setup-github.md", title: "Connect GitHub", step: "06" },
   { slug: "extending", file: "adding-integrations.md", title: "Adding Integrations", step: "07" },
-  { slug: "architecture", file: "architecture.md", title: "Architecture", step: "08" },
+  { slug: "design-your-own", file: "design-your-own.md", title: "Design Your Own with AI", step: "08" },
+  { slug: "architecture", file: "architecture.md", title: "Architecture", step: "09" },
 ]
 
 function markdownToHtml(md: string): string {
