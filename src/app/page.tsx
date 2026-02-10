@@ -130,7 +130,7 @@ export default function Home() {
             <p className="text-gray-400 leading-relaxed">
               Built on <strong className="text-gray-300">Next.js</strong>,{" "}
               <strong className="text-gray-300">Vercel AI SDK</strong>, and{" "}
-              <strong className="text-gray-300">Claude</strong>. Deploy to Vercel in minutes.
+              <strong className="text-gray-300">Vercel AI Gateway</strong>. Deploy to Vercel in minutes.
               Add your own integrations with a few prompts or lines of code.
             </p>
             <div className="flex flex-wrap gap-3 pt-2">
@@ -185,7 +185,7 @@ export default function Home() {
           </h2>
           <div className="bg-gray-950 border border-gray-800 rounded-lg p-6 text-sm overflow-x-auto">
             <pre className="text-gray-400 leading-relaxed">{`# ─── AI Model (required — pick one) ───────────────────────────
-# Option A: AI Gateway (recommended — one key, any model)
+# Option A: Vercel AI Gateway (recommended — one key, any model)
 AI_GATEWAY_API_KEY=          # Your Vercel AI Gateway key
 # Option B: Direct API key (simpler, single provider)
 # ANTHROPIC_API_KEY=         # From console.anthropic.com
@@ -195,6 +195,14 @@ AI_PROVIDER=anthropic        # "anthropic" or "openai"
 # ─── Slack Bot (required) ────────────────────────────────────
 SLACK_BOT_TOKEN=             # xoxb-your-bot-token
 SLACK_BOT_USER_ID=           # The bot's Slack user ID
+
+# ─── Authorized Users & Approvals ────────────────────────────
+AUTHORIZED_USER_EMAILS=      # Comma-separated emails
+# SLACK_APPROVER_GROUP_ID=   # Slack user group ID
+
+# ─── Redis (required for approvals) ─────────────────────────
+# UPSTASH_REDIS_REST_URL=
+# UPSTASH_REDIS_REST_TOKEN=
 
 # ─── Salesforce (optional) ───────────────────────────────────
 SALESFORCE_CLIENT_ID=
