@@ -4,7 +4,7 @@
 
 Built with [Next.js](https://nextjs.org), [Vercel AI SDK](https://sdk.vercel.ai), and [Claude](https://anthropic.com/claude).
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fmoperator&env=AI_PROVIDER,ANTHROPIC_API_KEY,SLACK_BOT_TOKEN&envDescription=Required%20environment%20variables&envLink=https%3A%2F%2Fgithub.com%2Fvercel%2Fmoperator%23environment-variables&project-name=moperator&repository-name=moperator)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fmoperator&env=AI_GATEWAY_API_KEY,AI_PROVIDER,SLACK_BOT_TOKEN&envDescription=Required%20environment%20variables&envLink=https%3A%2F%2Fgithub.com%2Fvercel%2Fmoperator%23environment-variables&project-name=moperator&repository-name=moperator)
 
 ---
 
@@ -24,7 +24,7 @@ mOperator is a Slack bot that lets marketing and sales teams interact with their
 - **Thread context** — Follow-up questions remember the conversation
 - **Slash commands** — `/moperator bug`, `/moperator feature`, `/moperator help`
 - **AI-powered issue triage** — Raw bug reports get enriched with structured titles, descriptions, and priority
-- **Admin controls** — Configurable delete permissions per Slack user
+- **Approval workflow** — Salesforce write operations require approval for non-authorized users, with Approve/Deny buttons in Slack
 - **Model flexibility** — Switch between Claude and GPT-4o with one env var
 
 ---
@@ -46,7 +46,7 @@ cp .env.example .env.local
 ```
 
 At minimum, you need:
-- `AI_PROVIDER` and `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`)
+- `AI_GATEWAY_API_KEY` — your [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) key
 - `SLACK_BOT_TOKEN` (see [Slack setup guide](docs/setup-slack-app.md))
 
 ### 3. Enable integrations
@@ -123,17 +123,21 @@ See [`.env.example`](.env.example) for the full list with descriptions.
 
 | Variable | Description |
 |----------|-------------|
-| `AI_PROVIDER` | `"anthropic"` or `"openai"` |
-| `ANTHROPIC_API_KEY` | Your Anthropic API key (if using Claude) |
+| `AI_GATEWAY_API_KEY` | Your Vercel AI Gateway API key ([docs](https://vercel.com/docs/ai-gateway)) |
+| `AI_PROVIDER` | `"anthropic"` or `"openai"` (default: `anthropic`) |
 | `SLACK_BOT_TOKEN` | Slack Bot User OAuth Token (`xoxb-...`) |
 
 ### Optional
 
 | Variable | Description |
 |----------|-------------|
-| `AI_MODEL` | Override the default model |
+| `AI_GATEWAY_URL` | Custom AI Gateway URL (default: `https://ai-gateway.vercel.sh`) |
+| `AI_MODEL` | Override the default model (default: `claude-sonnet-4-5-20250929`) |
 | `BOT_NAME` | Customize the bot name (default: "mOperator") |
-| `ADMIN_SLACK_USER_IDS` | Comma-separated Slack user IDs with delete permissions |
+| `AUTHORIZED_USER_EMAILS` | Comma-separated emails of users who can execute SF writes without approval |
+| `SLACK_APPROVER_GROUP_ID` | Slack user group ID for @mentioning approvers (e.g., `S0123456789`) |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis URL (required for approval workflow) |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis token (required for approval workflow) |
 | `SLACK_BOT_USER_ID` | Bot's Slack user ID (for thread history) |
 
 ---

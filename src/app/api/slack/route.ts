@@ -1,10 +1,13 @@
 /**
  * Slack Events API handler for mOperator
  * Handles @mentions and DMs with CSV export support
+ * Includes approval workflow for Salesforce write operations
  */
 
 import { waitUntil } from "@vercel/functions"
-import { generateText, stepCountIs } from "ai"
+import type { Tool } from "ai"
+import { generateText, stepCountIs, tool } from "ai"
+import { z } from "zod"
 import { getAIModel } from "@/lib/ai"
 import { getAllTools } from "@/lib/tools"
 import { SLACK_SYSTEM_PROMPT } from "@/lib/agent-config"
@@ -20,17 +23,247 @@ import {
   recordsToCSV,
 } from "@/lib/slack"
 import { fileIssueFromMessage } from "@/lib/integrations/linear"
+import { isAuthorizedUser, getApproverGroupMention } from "@/lib/permissions"
+import { storePendingApproval } from "@/lib/approval-store"
 
 const CSV_EXPORT_ROW_LIMIT = 10_000
 
-// Admin users who can delete records (Slack user IDs)
-function getAdminUserIds(): string[] {
-  const ids = process.env.ADMIN_SLACK_USER_IDS || ""
-  return ids.split(",").map((s) => s.trim()).filter(Boolean)
+// The 5 Salesforce write tools that require approval for non-authorized users
+const GATED_TOOL_NAMES = [
+  "updateSalesforceRecord",
+  "createSalesforceRecord",
+  "deleteSalesforceRecord",
+  "bulkUpdateRecords",
+  "addContactsToCampaign",
+] as const
+
+// Bulk record limits
+const AUTHORIZED_BULK_LIMIT = 1_500
+const NON_AUTHORIZED_BULK_LIMIT = 500
+
+/**
+ * Generate a human-readable description of a Salesforce write operation
+ * for the approval message posted in Slack.
+ */
+function describeOperation(
+  toolName: string,
+  args: Record<string, unknown>
+): string {
+  switch (toolName) {
+    case "updateSalesforceRecord":
+      return `Update ${args.objectName} record \`${args.recordId}\``
+    case "createSalesforceRecord":
+      return `Create a new ${args.objectName} record`
+    case "deleteSalesforceRecord":
+      return `Delete ${args.objectName} record \`${args.recordId}\``
+    case "bulkUpdateRecords": {
+      const records = args.records as Array<unknown> | undefined
+      const count = records?.length ?? 0
+      return `Bulk update ${count} ${args.objectName} record${count !== 1 ? "s" : ""}`
+    }
+    case "addContactsToCampaign": {
+      const contactIds = args.contactIds as Array<unknown> | undefined
+      const count = contactIds?.length ?? 0
+      return `Add ${count} contact${count !== 1 ? "s" : ""} to campaign \`${args.campaignId}\``
+    }
+    default:
+      return `Execute ${toolName}`
+  }
 }
 
-async function canUserDelete(userId: string): Promise<boolean> {
-  return getAdminUserIds().includes(userId)
+/**
+ * Build the tools object for a given request, wrapping gated SF write tools
+ * with authorization checks. Non-authorized users get approval-gated versions
+ * that store the operation and post Approve/Deny buttons instead of executing.
+ */
+function getToolsForRequest(
+  isAuthorized: boolean,
+  channel: string,
+  threadTs: string,
+  userId: string
+): Record<string, Tool> {
+  const allTools = getAllTools()
+  const wrappedTools: Record<string, Tool> = {}
+
+  for (const [name, t] of Object.entries(allTools)) {
+    if (!(GATED_TOOL_NAMES as readonly string[]).includes(name)) {
+      // Non-gated tool — pass through as-is
+      wrappedTools[name] = t as Tool
+      continue
+    }
+
+    if (isAuthorized) {
+      // Authorized user — execute immediately, but enforce bulk limits
+      if (name === "bulkUpdateRecords") {
+        wrappedTools[name] = tool({
+          description: (t as { description?: string }).description || `Execute ${name}`,
+          inputSchema: z.object({
+            objectName: z.string(),
+            records: z.array(z.object({ Id: z.string() }).passthrough()),
+          }),
+          execute: async (args) => {
+            if (args.records.length > AUTHORIZED_BULK_LIMIT) {
+              return {
+                success: false,
+                error: `Bulk operations are limited to ${AUTHORIZED_BULK_LIMIT} records. You submitted ${args.records.length}.`,
+              }
+            }
+            const original = t as { execute?: (args: Record<string, unknown>) => Promise<unknown> }
+            if (original.execute) {
+              return original.execute(args as unknown as Record<string, unknown>)
+            }
+            return { success: false, error: "Tool execute function not found" }
+          },
+        }) as Tool
+      } else {
+        // Other authorized write tools — pass through directly
+        wrappedTools[name] = t as Tool
+      }
+    } else {
+      // Non-authorized user — gate with approval workflow
+      if (name === "bulkUpdateRecords") {
+        wrappedTools[name] = tool({
+          description: (t as { description?: string }).description || `Execute ${name}`,
+          inputSchema: z.object({
+            objectName: z.string(),
+            records: z.array(z.object({ Id: z.string() }).passthrough()),
+          }),
+          execute: async (args) => {
+            if (args.records.length > NON_AUTHORIZED_BULK_LIMIT) {
+              return {
+                success: false,
+                error: `Bulk operations are limited to ${NON_AUTHORIZED_BULK_LIMIT} records for non-authorized users. You submitted ${args.records.length}.`,
+              }
+            }
+            return requestApproval(name, args as unknown as Record<string, unknown>, channel, threadTs, userId)
+          },
+        }) as Tool
+      } else if (name === "updateSalesforceRecord") {
+        wrappedTools[name] = tool({
+          description: (t as { description?: string }).description || `Execute ${name}`,
+          inputSchema: z.object({
+            objectName: z.string(),
+            recordId: z.string(),
+            data: z.record(z.string(), z.unknown()),
+          }),
+          execute: async (args) => {
+            return requestApproval(name, args as unknown as Record<string, unknown>, channel, threadTs, userId)
+          },
+        }) as Tool
+      } else if (name === "createSalesforceRecord") {
+        wrappedTools[name] = tool({
+          description: (t as { description?: string }).description || `Execute ${name}`,
+          inputSchema: z.object({
+            objectName: z.string(),
+            data: z.record(z.string(), z.unknown()),
+          }),
+          execute: async (args) => {
+            return requestApproval(name, args as unknown as Record<string, unknown>, channel, threadTs, userId)
+          },
+        }) as Tool
+      } else if (name === "deleteSalesforceRecord") {
+        wrappedTools[name] = tool({
+          description: (t as { description?: string }).description || `Execute ${name}`,
+          inputSchema: z.object({
+            objectName: z.string(),
+            recordId: z.string(),
+          }),
+          execute: async (args) => {
+            return requestApproval(name, args as unknown as Record<string, unknown>, channel, threadTs, userId)
+          },
+        }) as Tool
+      } else if (name === "addContactsToCampaign") {
+        wrappedTools[name] = tool({
+          description: (t as { description?: string }).description || `Execute ${name}`,
+          inputSchema: z.object({
+            campaignId: z.string(),
+            contactIds: z.array(z.string()),
+            status: z.string().optional(),
+          }),
+          execute: async (args) => {
+            return requestApproval(name, args as unknown as Record<string, unknown>, channel, threadTs, userId)
+          },
+        }) as Tool
+      }
+    }
+  }
+
+  return wrappedTools
+}
+
+/**
+ * Store the operation in Redis and post an approval request in the Slack thread.
+ */
+async function requestApproval(
+  toolName: string,
+  args: Record<string, unknown>,
+  channel: string,
+  threadTs: string,
+  userId: string
+): Promise<{ success: boolean; pending_approval: boolean; message: string }> {
+  const approvalId = crypto.randomUUID()
+  const description = describeOperation(toolName, args)
+  const userInfo = await getSlackUserInfo(userId)
+  const userName = userInfo?.name || userId
+  const approverMention = getApproverGroupMention()
+
+  const stored = await storePendingApproval({
+    id: approvalId,
+    toolName,
+    args,
+    userId,
+    channel,
+    threadTs,
+    messageTs: "",
+    description,
+    createdAt: Date.now(),
+  })
+
+  if (!stored) {
+    return {
+      success: false,
+      pending_approval: false,
+      message: "Redis is not configured. Approval workflow requires Redis. Please configure UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.",
+    }
+  }
+
+  await sendSlackMessage(
+    channel,
+    `${approverMention} Approval needed from *${userName}*:\n\n*${description}*\n\n_This request will expire in 30 minutes._`,
+    threadTs,
+    [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `${approverMention} Approval needed from *${userName}*:\n\n*${description}*\n\n_This request will expire in 30 minutes._`,
+        },
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Approve", emoji: true },
+            style: "primary",
+            action_id: "approve_operation",
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Deny", emoji: true },
+            style: "danger",
+            action_id: "deny_operation",
+          },
+        ],
+      },
+    ]
+  )
+
+  return {
+    success: true,
+    pending_approval: true,
+    message: `Your request to ${description.toLowerCase()} has been submitted for approval.`,
+  }
 }
 
 // Check if user wants CSV export
@@ -69,10 +302,16 @@ interface ProcessResult {
 
 async function processMessage(
   text: string,
-  conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = []
+  conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = [],
+  authContext: { isAuthorized: boolean; channel: string; threadTs: string; userId: string }
 ): Promise<ProcessResult> {
   const ctx: RequestContext = { queryResults: null }
-  const tools = getAllTools()
+  const tools = getToolsForRequest(
+    authContext.isAuthorized,
+    authContext.channel,
+    authContext.threadTs,
+    authContext.userId
+  )
 
   const messages: Array<{ role: "user" | "assistant"; content: string }> = [
     ...conversationHistory,
@@ -140,6 +379,7 @@ export async function POST(req: Request) {
 
       if (event.type === "app_mention" || event.type === "message") {
         const text = event.text?.replace(/<@[A-Z0-9]+>/g, "").trim() || ""
+        const slackUserId: string = event.user
 
         if (!text) {
           await sendSlackMessage(
@@ -161,6 +401,9 @@ export async function POST(req: Request) {
             }
 
             const thinkingTs = await postThinkingMessage(event.channel, threadTs)
+
+            // Check authorization once per request
+            const isAuthorized = await isAuthorizedUser(slackUserId)
 
             try {
               // Handle Linear issue shortcuts
@@ -191,7 +434,12 @@ export async function POST(req: Request) {
                 messageToProcess = `${text}\n\nAttached CSV data:\n\`\`\`\n${csvPreview}\n\`\`\``
               }
 
-              const result = await processMessage(messageToProcess, conversationHistory)
+              const result = await processMessage(messageToProcess, conversationHistory, {
+                isAuthorized,
+                channel: event.channel,
+                threadTs,
+                userId: slackUserId,
+              })
 
               if (thinkingTs) await deleteMessage(event.channel, thinkingTs)
 

@@ -36,7 +36,7 @@ CRITICAL INSTRUCTIONS:
    - NEVER perform bulk operations on vague requests
    - For updates affecting more than 100 records, summarize and confirm first
 
-5. DELETE PERMISSIONS: Only users listed in ADMIN_SLACK_USER_IDS can delete records. If someone else asks, tell them to contact an admin.`
+5. SALESFORCE WRITE PERMISSIONS: All Salesforce write operations (create, update, delete, bulk update, add to campaign) go through an approval workflow. If you are told a write operation returned pending_approval: true, inform the user that their request has been submitted for approval and an authorized team member will review it. Do NOT tell them they can't do it — just that it's pending approval.`
 }
 
 const BASE_SYSTEM_PROMPT = `${getIdentity()}

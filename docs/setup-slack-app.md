@@ -26,6 +26,7 @@ mOperator needs specific permissions to read messages and send responses:
    - `files:write` — Upload files
    - `im:history` — Read direct messages
    - `users:read` — Get user information
+   - `users:read.email` — Get user email addresses (needed for approval workflow)
    - `channels:history` — Read channel messages
    - `groups:history` — Read private channel messages
    - `commands` — Enable slash commands
@@ -42,6 +43,7 @@ groups:history
 channels:history
 im:history
 users:read
+users:read.email
 ```
 
 ## Step 3: Enable Event Subscriptions
@@ -69,7 +71,20 @@ users:read
    - **Usage Hint:** `bug|feature|help <text>`
 4. Click **"Save"**
 
-## Step 5: Configure App Home
+## Step 5: Enable Interactivity (for Approval Workflow)
+
+If you want to use the approval workflow for Salesforce write operations, you need to enable interactivity so Slack can send button clicks to your app:
+
+1. Click **"Interactivity & Shortcuts"** in the left sidebar
+2. Toggle **"Interactivity"** to ON
+3. In **"Request URL"**, enter:
+   - **Deployed to Vercel:** `https://your-app.vercel.app/api/slack/interactions`
+   - Replace `your-app` with your actual Vercel domain
+4. Click **"Save Changes"**
+
+This enables the Approve/Deny buttons that appear when a non-authorized user triggers a Salesforce write operation. See the [approval workflow](#approval-workflow) section below for details on configuring `AUTHORIZED_USER_EMAILS`.
+
+## Step 6: Configure App Home
 
 1. Click **"App Home"** in the left sidebar
 2. Under **"Messages Tab"**, toggle **ON**
@@ -79,13 +94,13 @@ users:read
 
 This lets users DM the bot directly.
 
-## Step 6: Install the App to Your Workspace
+## Step 7: Install the App to Your Workspace
 
 1. Click **"Install to Workspace"** (or **"Reinstall"** if you made changes)
 2. Review the permissions and click **"Allow"**
 3. You'll be redirected back to Slack settings
 
-## Step 7: Copy Your Bot Token
+## Step 8: Copy Your Bot Token
 
 1. Go back to **"OAuth & Permissions"**
 2. Under **"OAuth Tokens for Your Workspace"**, find **"Bot User OAuth Token"**
@@ -96,7 +111,7 @@ This lets users DM the bot directly.
 SLACK_BOT_TOKEN=xoxb-your-copied-token-here
 ```
 
-## Step 8 (Optional): Get Your Bot User ID
+## Step 9 (Optional): Get Your Bot User ID
 
 This is only needed if you want the bot to access thread history:
 
@@ -109,7 +124,7 @@ This is only needed if you want the bot to access thread history:
 SLACK_BOT_USER_ID=U12345678ABC
 ```
 
-## Step 9: Test the Bot
+## Step 10: Test the Bot
 
 1. Go to your Slack workspace
 2. In any channel or DM, mention the bot: `@mOperator say hello`
@@ -130,6 +145,46 @@ SLACK_BOT_USER_ID=U12345678ABC
 - Confirm `/moperator` command was created in Slash Commands settings
 - Check that the Request URL points to `/api/slack/commands`
 - Reinstall the app to your workspace after making changes
+
+## Approval Workflow
+
+mOperator includes an approval workflow for Salesforce write operations (create, update, delete, bulk update, add to campaign). When a non-authorized user asks the bot to perform a write operation, the bot posts an approval request with **Approve** and **Deny** buttons in the Slack thread. An authorized user must click Approve before the operation executes.
+
+### Configuration
+
+Add these to your `.env.local`:
+
+```bash
+# Comma-separated email addresses of authorized users (must match Slack profile emails)
+AUTHORIZED_USER_EMAILS=admin@example.com,ops-lead@example.com
+
+# Optional: Slack user group ID for @mentioning approvers in approval messages
+# Find this in Slack Admin > User Groups > copy the group ID (e.g., S0123456789)
+SLACK_APPROVER_GROUP_ID=S0123456789
+```
+
+You also need **Redis** configured for the approval store:
+
+```bash
+UPSTASH_REDIS_REST_URL=https://your-redis.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your-token-here
+```
+
+### How It Works
+
+1. A non-authorized user asks the bot to perform a Salesforce write (e.g., "delete contact John Smith")
+2. The bot posts a message in the thread: "Approval needed — Delete Contact record `003xxx`" with Approve/Deny buttons
+3. An authorized user (whose email is in `AUTHORIZED_USER_EMAILS`) clicks **Approve** or **Deny**
+4. If approved, the operation executes and the result is posted to the thread
+5. If denied, the requester is notified in the thread
+6. Approval requests expire after 30 minutes
+
+### Notes
+
+- If `AUTHORIZED_USER_EMAILS` is empty or not set, **all** write operations require approval (no one can self-approve)
+- Authorized users' write operations execute immediately without approval
+- Bulk operations have record limits: 1,500 for authorized users, 500 for non-authorized users
+- Redis is required for the approval workflow — without it, write operations will return an error
 
 ## Next Steps
 

@@ -63,6 +63,62 @@ export async function deleteMessage(channel: string, timestamp: string) {
   })
 }
 
+// ─── Message Updates ──────────────────────────────────────────────────────────
+
+export async function updateSlackMessage(
+  channel: string,
+  ts: string,
+  text: string,
+  blocks?: SlackBlock[]
+) {
+  const token = process.env.SLACK_BOT_TOKEN
+  if (!token) return
+
+  const body: Record<string, unknown> = { channel, ts, text }
+  if (blocks) body.blocks = blocks
+
+  const res = await fetch("https://slack.com/api/chat.update", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  })
+
+  const data = await res.json()
+  if (!data.ok) {
+    console.error("[Slack] Failed to update message:", data.error)
+  }
+  return data
+}
+
+// ─── Ephemeral Messages ──────────────────────────────────────────────────────
+
+export async function postEphemeralMessage(
+  channel: string,
+  userId: string,
+  text: string
+) {
+  const token = process.env.SLACK_BOT_TOKEN
+  if (!token) return
+
+  const res = await fetch("https://slack.com/api/chat.postEphemeral", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ channel, user: userId, text }),
+  })
+
+  const data = await res.json()
+  if (!data.ok) {
+    console.error("[Slack] Failed to post ephemeral message:", data.error)
+  }
+  return data
+}
+
 // ─── File Uploads ─────────────────────────────────────────────────────────────
 
 export async function uploadSlackFile(
