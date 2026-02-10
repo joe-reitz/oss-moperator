@@ -51,8 +51,8 @@ After deployment, set up environment variables in Vercel:
 2. Click your mOperator project
 3. Go to **Settings** → **Environment Variables**
 4. Add each variable:
+   - `AI_GATEWAY_API_KEY` = (your [AI Gateway](https://vercel.com/docs/ai-gateway) key)
    - `AI_PROVIDER` = `anthropic` (or `openai`)
-   - `ANTHROPIC_API_KEY` = (your key)
    - `SLACK_BOT_TOKEN` = `xoxb-...`
    - Other integrations as needed (Salesforce, Linear, GitHub)
 
