@@ -28,13 +28,30 @@ import { storePendingApproval } from "@/lib/approval-store"
 
 const CSV_EXPORT_ROW_LIMIT = 10_000
 
-// The 5 Salesforce write tools that require approval for non-authorized users
+// Write tools that require approval for non-authorized users
 const GATED_TOOL_NAMES = [
+  // Salesforce
   "updateSalesforceRecord",
   "createSalesforceRecord",
   "deleteSalesforceRecord",
   "bulkUpdateRecords",
   "addContactsToCampaign",
+  // HubSpot
+  "createHubSpotContact",
+  "updateHubSpotContact",
+  "deleteHubSpotContact",
+  "createHubSpotCompany",
+  "updateHubSpotCompany",
+  "createHubSpotDeal",
+  "updateHubSpotDeal",
+  "addToHubSpotList",
+  "removeFromHubSpotList",
+  // Marketo
+  "createOrUpdateMarketoLeads",
+  "deleteMarketoLead",
+  "addLeadsToMarketoList",
+  "removeLeadsFromMarketoList",
+  "triggerMarketoCampaign",
 ] as const
 
 // Bulk record limits
@@ -42,7 +59,7 @@ const AUTHORIZED_BULK_LIMIT = 1_500
 const NON_AUTHORIZED_BULK_LIMIT = 500
 
 /**
- * Generate a human-readable description of a Salesforce write operation
+ * Generate a human-readable description of a write operation
  * for the approval message posted in Slack.
  */
 function describeOperation(
@@ -50,6 +67,7 @@ function describeOperation(
   args: Record<string, unknown>
 ): string {
   switch (toolName) {
+    // Salesforce
     case "updateSalesforceRecord":
       return `Update ${args.objectName} record \`${args.recordId}\``
     case "createSalesforceRecord":
@@ -66,13 +84,61 @@ function describeOperation(
       const count = contactIds?.length ?? 0
       return `Add ${count} contact${count !== 1 ? "s" : ""} to campaign \`${args.campaignId}\``
     }
+    // HubSpot
+    case "createHubSpotContact":
+      return "Create a new HubSpot contact"
+    case "updateHubSpotContact":
+      return `Update HubSpot contact \`${args.contactId}\``
+    case "deleteHubSpotContact":
+      return `Delete HubSpot contact \`${args.contactId}\``
+    case "createHubSpotCompany":
+      return "Create a new HubSpot company"
+    case "updateHubSpotCompany":
+      return `Update HubSpot company \`${args.companyId}\``
+    case "createHubSpotDeal":
+      return "Create a new HubSpot deal"
+    case "updateHubSpotDeal":
+      return `Update HubSpot deal \`${args.dealId}\``
+    case "addToHubSpotList": {
+      const ids = args.recordIds as Array<unknown> | undefined
+      const count = ids?.length ?? 0
+      return `Add ${count} record${count !== 1 ? "s" : ""} to HubSpot list \`${args.listId}\``
+    }
+    case "removeFromHubSpotList": {
+      const ids = args.recordIds as Array<unknown> | undefined
+      const count = ids?.length ?? 0
+      return `Remove ${count} record${count !== 1 ? "s" : ""} from HubSpot list \`${args.listId}\``
+    }
+    // Marketo
+    case "createOrUpdateMarketoLeads": {
+      const leads = args.leads as Array<unknown> | undefined
+      const count = leads?.length ?? 0
+      return `Create/update ${count} Marketo lead${count !== 1 ? "s" : ""}`
+    }
+    case "deleteMarketoLead":
+      return `Delete Marketo lead \`${args.leadId}\``
+    case "addLeadsToMarketoList": {
+      const ids = args.leadIds as Array<unknown> | undefined
+      const count = ids?.length ?? 0
+      return `Add ${count} lead${count !== 1 ? "s" : ""} to Marketo list \`${args.listId}\``
+    }
+    case "removeLeadsFromMarketoList": {
+      const ids = args.leadIds as Array<unknown> | undefined
+      const count = ids?.length ?? 0
+      return `Remove ${count} lead${count !== 1 ? "s" : ""} from Marketo list \`${args.listId}\``
+    }
+    case "triggerMarketoCampaign": {
+      const ids = args.leadIds as Array<unknown> | undefined
+      const count = ids?.length ?? 0
+      return `Trigger Marketo campaign \`${args.campaignId}\` for ${count} lead${count !== 1 ? "s" : ""}`
+    }
     default:
       return `Execute ${toolName}`
   }
 }
 
 /**
- * Build the tools object for a given request, wrapping gated SF write tools
+ * Build the tools object for a given request, wrapping gated write tools
  * with authorization checks. Non-authorized users get approval-gated versions
  * that store the operation and post Approve/Deny buttons instead of executing.
  */
@@ -184,6 +250,18 @@ function getToolsForRequest(
             return requestApproval(name, args as unknown as Record<string, unknown>, channel, threadTs, userId)
           },
         }) as Tool
+      } else {
+        // Generic gated tool (HubSpot, Marketo, etc.) — wrap execute with approval
+        const original = t as Tool & {
+          parameters?: unknown
+          execute?: (args: Record<string, unknown>) => Promise<unknown>
+        }
+        wrappedTools[name] = {
+          ...original,
+          execute: async (args: Record<string, unknown>) => {
+            return requestApproval(name, args, channel, threadTs, userId)
+          },
+        } as Tool
       }
     }
   }

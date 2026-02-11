@@ -12,12 +12,16 @@ import type { Tool } from "ai"
 import { salesforceIntegration } from "./salesforce"
 import { linearIntegration } from "./linear"
 import { githubIntegration } from "./github"
+import { hubspotIntegration } from "./hubspot"
+import { marketoIntegration } from "./marketo"
 
 /** All available integrations — add new ones here */
 const ALL_INTEGRATIONS: Integration[] = [
   salesforceIntegration,
   linearIntegration,
   githubIntegration,
+  hubspotIntegration,
+  marketoIntegration,
 ]
 
 /** Get only the integrations that are configured */

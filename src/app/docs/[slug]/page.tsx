@@ -8,11 +8,13 @@ const DOCS = [
   { slug: "ai-gateway", file: "setup-ai-gateway.md", title: "Set Up AI Gateway", step: "02" },
   { slug: "slack", file: "setup-slack-app.md", title: "Create a Slack App", step: "03" },
   { slug: "salesforce", file: "setup-salesforce.md", title: "Connect Salesforce", step: "04" },
-  { slug: "project-management", file: "setup-linear.md", title: "Connect Project Management", step: "05" },
-  { slug: "github", file: "setup-github.md", title: "Connect GitHub", step: "06" },
-  { slug: "extending", file: "adding-integrations.md", title: "Adding Integrations", step: "07" },
-  { slug: "design-your-own", file: "design-your-own.md", title: "Design Your Own with AI", step: "08" },
-  { slug: "architecture", file: "architecture.md", title: "Architecture", step: "09" },
+  { slug: "hubspot", file: "setup-hubspot.md", title: "Connect HubSpot", step: "05" },
+  { slug: "marketo", file: "setup-marketo.md", title: "Connect Marketo", step: "06" },
+  { slug: "project-management", file: "setup-linear.md", title: "Connect Project Management", step: "07" },
+  { slug: "github", file: "setup-github.md", title: "Connect GitHub", step: "08" },
+  { slug: "extending", file: "adding-integrations.md", title: "Adding Integrations", step: "09" },
+  { slug: "design-your-own", file: "design-your-own.md", title: "Design Your Own with AI", step: "10" },
+  { slug: "architecture", file: "architecture.md", title: "Architecture", step: "11" },
 ]
 
 function markdownToHtml(md: string): string {

@@ -58,13 +58,27 @@ const SETUP_GUIDES = [
   },
   {
     step: "05",
+    title: "Connect HubSpot",
+    description: "Search contacts, companies, and deals. Manage lists and CRM records from Slack.",
+    href: "/docs/hubspot",
+    tag: "Optional",
+  },
+  {
+    step: "06",
+    title: "Connect Marketo",
+    description: "Search leads, manage static lists, trigger campaigns, and view programs from Slack.",
+    href: "/docs/marketo",
+    tag: "Optional",
+  },
+  {
+    step: "07",
     title: "Connect Project Management",
     description: "File bugs and feature requests from Slack to Linear, Asana, Monday.com, or your PM tool of choice.",
     href: "/docs/project-management",
     tag: "Optional",
   },
   {
-    step: "06",
+    step: "08",
     title: "Connect GitHub",
     description: "View commits, generate release notes, and see what shipped this week.",
     href: "/docs/github",
@@ -135,6 +149,8 @@ export default function Home() {
             </p>
             <div className="flex flex-wrap gap-3 pt-2">
               <span className="text-xs px-3 py-1 rounded-full border border-gray-700 text-gray-400">Salesforce</span>
+              <span className="text-xs px-3 py-1 rounded-full border border-gray-700 text-gray-400">HubSpot</span>
+              <span className="text-xs px-3 py-1 rounded-full border border-gray-700 text-gray-400">Marketo</span>
               <span className="text-xs px-3 py-1 rounded-full border border-gray-700 text-gray-400">Project Management</span>
               <span className="text-xs px-3 py-1 rounded-full border border-gray-700 text-gray-400">GitHub</span>
               <span className="text-xs px-3 py-1 rounded-full border border-gray-700 text-gray-400">Slack</span>
@@ -209,6 +225,14 @@ SALESFORCE_CLIENT_ID=
 SALESFORCE_CLIENT_SECRET=
 SALESFORCE_ACCESS_TOKEN=
 SALESFORCE_INSTANCE_URL=
+
+# ─── HubSpot (optional) ─────────────────────────────────────
+HUBSPOT_API_TOKEN=           # Private App access token
+
+# ─── Marketo (optional) ─────────────────────────────────────
+MARKETO_CLIENT_ID=
+MARKETO_CLIENT_SECRET=
+MARKETO_REST_ENDPOINT=       # e.g., https://123-ABC-456.mktorest.com
 
 # ─── Project Management (optional) ──────────────────────────
 LINEAR_API_KEY=
@@ -355,6 +379,8 @@ POST /api/agent      POST /api/slack
                |
                +-- Tools (auto-discovered from integrations):
                    +-- Salesforce (if configured)
+                   +-- HubSpot (if configured)
+                   +-- Marketo (if configured)
                    +-- Project Management (if configured)
                    +-- GitHub (if configured)
                    +-- Your custom tools`}</pre>
@@ -384,6 +410,8 @@ POST /api/agent      POST /api/slack
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> Thread context for follow-up questions</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> Permission controls for destructive actions</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> Auto-discovered integrations via env vars</div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> HubSpot contacts, companies, deals, and lists</div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Marketo leads, campaigns, programs, and emails</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> File bugs and features to your PM tool from Slack</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> GitHub commit history and release notes</div>
             </div>
