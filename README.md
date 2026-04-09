@@ -16,6 +16,8 @@ mOperator is a Slack bot that lets marketing and sales teams interact with their
 - **"Export contacts from Acme Corp as CSV"** → Runs SOQL, uploads CSV to Slack
 - **"Bug: dashboard spinner never stops"** → Files a Linear issue with AI-enriched title and description
 - **"What shipped this week?"** → Fetches GitHub commits and summarizes changes
+- **"Create a search campaign with $200/day budget"** → Creates a Google Ads campaign (with approval)
+- **"How are our Google Ads performing?"** → Pulls campaign metrics
 
 ### Key Features
 
@@ -25,6 +27,7 @@ mOperator is a Slack bot that lets marketing and sales teams interact with their
 - **Slash commands** — `/moperator bug`, `/moperator feature`, `/moperator help`
 - **AI-powered issue triage** — Raw bug reports get enriched with structured titles, descriptions, and priority
 - **Approval workflow** — Salesforce write operations require approval for non-authorized users, with Approve/Deny buttons in Slack
+- **Ad spend safeguards** — Google Ads operations always require designated growth team approval, with mandatory Approve/Deny buttons
 - **Model flexibility** — Switch between Claude and GPT-4o with one env var
 
 ---
@@ -58,6 +61,7 @@ mOperator auto-discovers integrations based on env vars. Just add the keys for w
 | Salesforce  | `SALESFORCE_ACCESS_TOKEN`, `SALESFORCE_INSTANCE_URL` | [docs/setup-salesforce.md](docs/setup-salesforce.md) |
 | Linear      | `LINEAR_API_KEY` | [docs/setup-linear.md](docs/setup-linear.md) |
 | GitHub      | `GITHUB_TOKEN`, `GITHUB_REPO` | [docs/setup-github.md](docs/setup-github.md) |
+| Google Ads  | `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID` | [docs/setup-google-ads.md](docs/setup-google-ads.md) |
 
 ### 4. Run locally
 

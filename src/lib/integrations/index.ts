@@ -14,6 +14,7 @@ import { linearIntegration } from "./linear"
 import { githubIntegration } from "./github"
 import { hubspotIntegration } from "./hubspot"
 import { marketoIntegration } from "./marketo"
+import { googleAdsIntegration } from "./google-ads"
 
 /** All available integrations — add new ones here */
 const ALL_INTEGRATIONS: Integration[] = [
@@ -22,6 +23,7 @@ const ALL_INTEGRATIONS: Integration[] = [
   githubIntegration,
   hubspotIntegration,
   marketoIntegration,
+  googleAdsIntegration,
 ]
 
 /** Get only the integrations that are configured */

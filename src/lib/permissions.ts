@@ -39,6 +39,28 @@ export async function isAuthorizedUser(userId: string): Promise<boolean> {
  * Uses SLACK_APPROVER_GROUP_ID env var for proper <!subteam^ID> mention,
  * falls back to plain text "@approvers".
  */
+/**
+ * Returns the list of email addresses authorized to approve
+ * growth marketing operations (Google Ads spend changes, etc.).
+ */
+export function getGrowthApproverEmails(): string[] {
+  const raw = process.env.GROWTH_MARKETING_APPROVERS
+  if (!raw) return []
+  return raw.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean)
+}
+
+/**
+ * Checks whether a Slack user is a growth marketing approver.
+ * Looks up the user's email via Slack API and checks against GROWTH_MARKETING_APPROVERS.
+ */
+export async function isGrowthApprover(userId: string): Promise<boolean> {
+  const approvers = getGrowthApproverEmails()
+  if (!approvers.length) return false
+  const userInfo = await getSlackUserInfo(userId)
+  if (!userInfo?.email) return false
+  return approvers.includes(userInfo.email.toLowerCase())
+}
+
 export function getApproverGroupMention(): string {
   const groupId = process.env.SLACK_APPROVER_GROUP_ID
   if (groupId) {

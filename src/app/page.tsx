@@ -84,6 +84,13 @@ const SETUP_GUIDES = [
     href: "/docs/github",
     tag: "Optional",
   },
+  {
+    step: "09",
+    title: "Connect Google Ads",
+    description: "Manage campaigns, create ads, set budgets, and track performance. All spend operations require approval.",
+    href: "/docs/google-ads",
+    tag: "Optional",
+  },
 ]
 
 const EXAMPLE_COMMANDS = [
@@ -93,6 +100,8 @@ const EXAMPLE_COMMANDS = [
   { cmd: "@mOperator", text: "What shipped this week?" },
   { cmd: "/moperator bug", text: "Dashboard spinner never stops" },
   { cmd: "@mOperator", text: "File a feature request: add dark mode to reports" },
+  { cmd: "@mOperator", text: "List my Google Ads campaigns" },
+  { cmd: "@mOperator", text: "Create a search campaign with $200/day budget" },
 ]
 
 export default function Home() {
