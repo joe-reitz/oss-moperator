@@ -6,6 +6,7 @@
  * as integrations are enabled/disabled via env vars.
  */
 
+import { formatVocabularyForPrompt } from "./audience/vocabulary"
 import {
   generateCapabilitiesText,
   getActiveIntegrationNames,
@@ -80,3 +81,15 @@ Guidelines:
 - When asked about DATA, CAMPAIGNS, CONTACTS -> use querySalesforce tool
 - Format results clearly - use markdown tables for lists when appropriate
 - Be concise and action-oriented`
+
+/**
+ * Slack system prompt with the audience vocabulary appended (when any
+ * entries are configured). Use this in the Slack events route instead of
+ * the static `SLACK_SYSTEM_PROMPT` so vocab edits in /audience-vocab take
+ * effect on the next request without a redeploy.
+ */
+export async function getSlackSystemPromptWithVocab(): Promise<string> {
+  const vocab = await formatVocabularyForPrompt().catch(() => "")
+  if (!vocab) return SLACK_SYSTEM_PROMPT
+  return `${SLACK_SYSTEM_PROMPT}\n\n${vocab}`
+}

@@ -15,6 +15,7 @@ import { githubIntegration } from "./github"
 import { hubspotIntegration } from "./hubspot"
 import { marketoIntegration } from "./marketo"
 import { googleAdsIntegration } from "./google-ads"
+import { lumaIntegration } from "./luma"
 
 /** All available integrations — add new ones here */
 const ALL_INTEGRATIONS: Integration[] = [
@@ -24,6 +25,7 @@ const ALL_INTEGRATIONS: Integration[] = [
   hubspotIntegration,
   marketoIntegration,
   googleAdsIntegration,
+  lumaIntegration,
 ]
 
 /** Get only the integrations that are configured */

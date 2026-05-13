@@ -8,11 +8,17 @@ import type { CommandHandler } from './types'
 import { helpCommand } from './handlers/help'
 import { bugCommand } from './handlers/bug'
 import { featureCommand } from './handlers/feature'
+import { connectSfdcCommand } from './handlers/connectSfdc'
+import { disconnectSfdcCommand } from './handlers/disconnectSfdc'
+import { sfdcStatusCommand } from './handlers/sfdcStatus'
 
 const COMMANDS: CommandHandler[] = [
   helpCommand,
   bugCommand,
   featureCommand,
+  connectSfdcCommand,
+  disconnectSfdcCommand,
+  sfdcStatusCommand,
 ]
 
 const registry = new Map<string, CommandHandler>()

@@ -91,15 +91,30 @@ const SETUP_GUIDES = [
     href: "/docs/google-ads",
     tag: "Optional",
   },
+  {
+    step: "10",
+    title: "Connect Luma",
+    description: "Create event registration pages with compliance questions baked in. Optionally stamp the Luma event ID onto a Salesforce Campaign.",
+    href: "/docs/security",
+    tag: "Optional",
+  },
+  {
+    step: "11",
+    title: "Lock Down for Production",
+    description: "Slack signature verification, admin sign-in, per-user Salesforce OAuth, and a deployment checklist. Required before sharing the bot link.",
+    href: "/docs/security",
+    tag: "Required",
+  },
 ]
 
 const EXAMPLE_COMMANDS = [
   { cmd: "@mOperator", text: "What campaigns are active?" },
   { cmd: "@mOperator", text: "Show me all contacts at Acme Corp" },
   { cmd: "@mOperator", text: "Export all leads as CSV" },
+  { cmd: "@mOperator", text: "Create a Luma event for our launch party in NYC on March 15" },
   { cmd: "@mOperator", text: "What shipped this week?" },
   { cmd: "/moperator bug", text: "Dashboard spinner never stops" },
-  { cmd: "@mOperator", text: "File a feature request: add dark mode to reports" },
+  { cmd: "/moperator connect-sfdc", text: "(connect your own SFDC account for attribution)" },
   { cmd: "@mOperator", text: "List my Google Ads campaigns" },
   { cmd: "@mOperator", text: "Create a search campaign with $200/day budget" },
 ]
@@ -404,6 +419,36 @@ POST /api/agent      POST /api/slack
           </div>
         </section>
 
+        {/* Security */}
+        <section className="mb-16">
+          <h2 className="text-green-400 text-lg mb-4 flex items-center gap-2">
+            <span className="text-gray-600">$</span> cat SECURITY.md
+          </h2>
+          <div className="bg-gray-950 border border-gray-800 rounded-lg p-6 space-y-4">
+            <p className="text-gray-300 leading-relaxed">
+              mOperator is an <strong className="text-white">admin-level integration</strong> —
+              once deployed it can query your CRM, send Slack messages, and write campaign data.
+              Treat it like a production service.
+            </p>
+            <ul className="space-y-2 text-sm text-gray-400">
+              <li className="flex gap-2"><span className="text-green-400">+</span> Slack signature verification on every webhook (<code className="text-gray-300">SLACK_SIGNING_SECRET</code>)</li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> Admin pages gated by <code className="text-gray-300">AUTHORIZED_USER_EMAILS</code> + Slack OAuth sign-in</li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> Per-user Salesforce OAuth — SFDC writes show the actual user, not a service account</li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> AES-256-GCM encrypted refresh tokens in Redis, 90-day TTL on inactivity</li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> Approval workflow with Slack buttons for every write operation</li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> Read-only SOQL validator on the console — DML keywords rejected at the server</li>
+            </ul>
+            <div className="pt-2 flex flex-col sm:flex-row gap-3">
+              <Link href="/docs/security" className="text-green-400 text-sm hover:underline">
+                Security setup guide &rarr;
+              </Link>
+              <Link href="/docs/sfdc-per-user-oauth" className="text-green-400 text-sm hover:underline">
+                Per-user Salesforce OAuth &rarr;
+              </Link>
+            </div>
+          </div>
+        </section>
+
         {/* Features */}
         <section className="mb-16">
           <h2 className="text-green-400 text-lg mb-4 flex items-center gap-2">
@@ -412,15 +457,19 @@ POST /api/agent      POST /api/slack
           <div className="bg-gray-950 border border-gray-800 rounded-lg p-6">
             <div className="grid sm:grid-cols-2 gap-x-8 gap-y-2 text-sm text-gray-400">
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> Natural language queries against Salesforce</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Create, update, and delete records</div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> SOQL Console — NL → SOQL → CSV at <code className="text-gray-300">/console</code></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Analytics dashboard at <code className="text-gray-300">/analytics</code></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Audience vocabulary admin at <code className="text-gray-300">/audience-vocab</code></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Create, update, and delete records (with approval)</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> Bulk update hundreds of records at once</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> CSV export as Slack file attachment</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> CSV upload — attach a file and process it</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> Thread context for follow-up questions</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Permission controls for destructive actions</div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Per-user SFDC OAuth for write attribution</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> Auto-discovered integrations via env vars</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> HubSpot contacts, companies, deals, and lists</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> Marketo leads, campaigns, programs, and emails</div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Luma event creation with compliance Q&apos;s</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> File bugs and features to your PM tool from Slack</div>
               <div className="flex items-center gap-2"><span className="text-green-400">+</span> GitHub commit history and release notes</div>
             </div>
