@@ -15,6 +15,8 @@ const DOCS = [
   { slug: "extending", file: "adding-integrations.md", title: "Adding Integrations", step: "09" },
   { slug: "design-your-own", file: "design-your-own.md", title: "Design Your Own with AI", step: "10" },
   { slug: "architecture", file: "architecture.md", title: "Architecture", step: "11" },
+  { slug: "security", file: "security.md", title: "Security Setup", step: "12" },
+  { slug: "sfdc-per-user-oauth", file: "sfdc-per-user-oauth.md", title: "Per-User Salesforce OAuth", step: "13" },
 ]
 
 function markdownToHtml(md: string): string {

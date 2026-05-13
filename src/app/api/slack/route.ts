@@ -10,7 +10,7 @@ import { generateText, stepCountIs, tool } from "ai"
 import { z } from "zod"
 import { getAIModel } from "@/lib/ai"
 import { getAllTools } from "@/lib/tools"
-import { SLACK_SYSTEM_PROMPT } from "@/lib/agent-config"
+import { getSlackSystemPromptWithVocab } from "@/lib/agent-config"
 import {
   sendSlackMessage,
   deleteMessage,
@@ -22,9 +22,11 @@ import {
   markdownToSlack,
   recordsToCSV,
 } from "@/lib/slack"
+import { trackEvent } from "@/lib/analytics"
 import { fileIssueFromMessage } from "@/lib/integrations/linear"
 import { isAuthorizedUser, getApproverGroupMention } from "@/lib/permissions"
 import { storePendingApproval } from "@/lib/approval-store"
+import { readVerifiedSlackBody } from "@/lib/slack-signature"
 
 const CSV_EXPORT_ROW_LIMIT = 10_000
 
@@ -368,14 +370,17 @@ function wantsLinearIssue(text: string): { type: "bug" | "feature"; description:
   return null
 }
 
-// Store query results for CSV export (per-request)
+// Per-request context for CSV export + post-response side effects
 interface RequestContext {
   queryResults: Record<string, unknown>[] | null
+  pendingLumaEvent: import("@/lib/integrations/luma/blocks").PendingLumaEventConfirmation | null
 }
 
 interface ProcessResult {
   text: string
   records: Record<string, unknown>[] | null
+  toolsUsed: string[]
+  pendingLumaEvent: import("@/lib/integrations/luma/blocks").PendingLumaEventConfirmation | null
 }
 
 async function processMessage(
@@ -383,7 +388,7 @@ async function processMessage(
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = [],
   authContext: { isAuthorized: boolean; channel: string; threadTs: string; userId: string }
 ): Promise<ProcessResult> {
-  const ctx: RequestContext = { queryResults: null }
+  const ctx: RequestContext = { queryResults: null, pendingLumaEvent: null }
   const tools = getToolsForRequest(
     authContext.isAuthorized,
     authContext.channel,
@@ -396,18 +401,58 @@ async function processMessage(
     { role: "user", content: text },
   ]
 
+  const toolsUsed = new Set<string>()
+
   const { text: responseText } = await generateText({
     model: getAIModel(),
-    system: SLACK_SYSTEM_PROMPT,
+    system: await getSlackSystemPromptWithVocab(),
     tools,
     stopWhen: stepCountIs(10),
     messages,
     onStepFinish({ toolResults }) {
       for (const result of toolResults) {
+        toolsUsed.add(result.toolName)
         if (result.toolName === "querySalesforce" && result.output) {
           const data = result.output as { success: boolean; records?: Record<string, unknown>[] }
           if (data.success && data.records) {
             ctx.queryResults = data.records
+          }
+        }
+        if (result.toolName === "createLumaEvent" && result.output) {
+          const data = result.output as {
+            pending_confirmation?: boolean
+            confirmationId?: string
+            name?: string
+            startAt?: string
+            endAt?: string
+            timezone?: string
+            description?: string
+            address?: string
+            city?: string
+            meetingUrl?: string
+            coverUrl?: string
+            visibility?: string
+            requireApproval?: boolean
+            partners?: string[]
+            sfdcCampaignId?: string
+          }
+          if (data.pending_confirmation && data.confirmationId) {
+            ctx.pendingLumaEvent = {
+              confirmationId: data.confirmationId,
+              name: data.name || "",
+              startAt: data.startAt || "",
+              endAt: data.endAt || "",
+              timezone: data.timezone || "",
+              description: data.description || "",
+              address: data.address || "",
+              city: data.city || "",
+              meetingUrl: data.meetingUrl || "",
+              coverUrl: data.coverUrl || "",
+              visibility: data.visibility || "private",
+              requireApproval: data.requireApproval ?? true,
+              partners: data.partners && data.partners.length > 0 ? data.partners : undefined,
+              sfdcCampaignId: data.sfdcCampaignId || undefined,
+            }
           }
         }
       }
@@ -417,6 +462,8 @@ async function processMessage(
   return {
     text: responseText || "I processed your request but couldn't generate a response.",
     records: ctx.queryResults,
+    toolsUsed: Array.from(toolsUsed),
+    pendingLumaEvent: ctx.pendingLumaEvent,
   }
 }
 
@@ -438,7 +485,11 @@ async function getAttachedCSV(event: { files?: SlackFile[] }): Promise<string | 
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
+    const verified = await readVerifiedSlackBody(req)
+    if ("error" in verified) {
+      return new Response(verified.error, { status: verified.status })
+    }
+    const body = JSON.parse(verified.rawBody)
 
     // Slack URL verification
     if (body.type === "url_verification") {
@@ -522,7 +573,34 @@ export async function POST(req: Request) {
               if (thinkingTs) await deleteMessage(event.channel, thinkingTs)
 
               const slackText = markdownToSlack(result.text)
-              await sendSlackMessage(event.channel, slackText, threadTs)
+              if (result.pendingLumaEvent) {
+                const { buildLumaConfirmationBlocks } = await import("@/lib/integrations/luma/blocks")
+                const blocks = buildLumaConfirmationBlocks(slackText, result.pendingLumaEvent)
+                await sendSlackMessage(event.channel, slackText, threadTs, blocks)
+              } else {
+                await sendSlackMessage(event.channel, slackText, threadTs)
+              }
+
+              // Fire-and-forget analytics — never blocks the user response
+              try {
+                const userInfo = await getSlackUserInfo(slackUserId).catch(() => null)
+                trackEvent({
+                  type: "slack_message",
+                  userId: slackUserId,
+                  userName: userInfo?.name || slackUserId,
+                  channelId: event.channel,
+                  threadTs,
+                  success: true,
+                  metadata: {
+                    textLen: text.length,
+                    hadCsvAttachment: !!csvData,
+                    toolsUsed: result.toolsUsed,
+                    isAuthorized,
+                  },
+                })
+              } catch {
+                // Analytics is non-critical
+              }
 
               // CSV export
               if (shouldExportCSV && result.records && result.records.length > 0) {

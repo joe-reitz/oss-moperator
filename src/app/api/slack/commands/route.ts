@@ -8,11 +8,16 @@
 import { NextResponse } from 'next/server'
 import type { SlackCommandPayload, CommandContext, CommandResponse } from './types'
 import { getCommand } from './registry'
+import { readVerifiedSlackBody } from '@/lib/slack-signature'
 
 export async function POST(request: Request) {
   try {
-    const formData = await request.formData()
-    const payload = Object.fromEntries(formData.entries()) as unknown as SlackCommandPayload
+    const verified = await readVerifiedSlackBody(request)
+    if ('error' in verified) {
+      return new NextResponse(verified.error, { status: verified.status })
+    }
+    const params = new URLSearchParams(verified.rawBody)
+    const payload = Object.fromEntries(params.entries()) as unknown as SlackCommandPayload
 
     const parts = payload.text.trim().split(/\s+/).filter(Boolean)
     const subcommand = parts[0]?.toLowerCase() || 'help'

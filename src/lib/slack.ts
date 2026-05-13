@@ -9,12 +9,15 @@
 export interface SlackBlock {
   type: string
   text?: { type: string; text: string }
+  image_url?: string
+  alt_text?: string
   elements?: Array<{
     type: string
     text?: { type: string; text: string; emoji?: boolean }
     url?: string
     style?: string
     action_id?: string
+    value?: string
   }>
 }
 
