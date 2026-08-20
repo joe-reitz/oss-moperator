@@ -1,8 +1,9 @@
 /**
  * Weekly marketing-ops triage digest.
  *
- * What got filed, what is stuck, what shipped. Pulls from Linear and GitHub if
- * they are configured; skips whatever is not.
+ * What got filed, what is stuck, what shipped. Pulls from whichever project
+ * tracker is configured — Linear, Asana, Jira, monday.com, or ClickUp — plus
+ * GitHub. Skips whatever is not connected.
  *
  * Inert until MOPERATOR_TRIAGE_DIGEST_CHANNEL is set.
  */
@@ -25,8 +26,8 @@ export default defineSchedule({
         [
           "Weekly triage digest for the last 7 days:",
           "",
-          "- Issues filed this week, grouped by label, with URLs",
-          "- Anything still sitting in triage that was filed more than a week ago",
+          "- Work filed this week in the project tracker, grouped by label, with URLs",
+          "- Anything still open that was filed more than a week ago",
           "- What shipped, summarized for a non-engineering audience",
           "",
           "Skip any section whose integration is not configured rather than mentioning it. Keep the whole post under about fifteen lines.",

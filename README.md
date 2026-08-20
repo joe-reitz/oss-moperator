@@ -35,9 +35,9 @@ and deployed as a single Next.js project.
   → files a Linear issue with a written title, body, priority, and labels
 ```
 
-It reaches Salesforce, HubSpot, Marketo, Google Ads, Linear, GitHub, and Luma —
-whichever you configure — plus web search, a Linux sandbox, and its own
-CRM-safety rules.
+It reaches Salesforce, HubSpot, Marketo, Google Ads, GitHub, Luma, and your
+project tracker — Linear, Asana, Jira, monday.com, or ClickUp — whichever you
+configure, plus web search, a Linux sandbox, and its own CRM-safety rules.
 
 ## Why fork it instead of buying it
 
@@ -101,7 +101,7 @@ Set the variables, restart. That is the whole step.
 | HubSpot | `HUBSPOT_API_TOKEN` | [docs](docs/setup-hubspot.md) |
 | Marketo | `MARKETO_CLIENT_ID`, `MARKETO_CLIENT_SECRET`, `MARKETO_REST_ENDPOINT` | [docs](docs/setup-marketo.md) |
 | Google Ads | `GOOGLE_ADS_CLIENT_ID`, `..._SECRET`, `..._DEVELOPER_TOKEN`, `..._CUSTOMER_ID` | [docs](docs/setup-google-ads.md) |
-| Linear | `LINEAR_API_KEY` | [docs](docs/setup-linear.md) |
+| Project tracker | any one of Linear, Asana, Jira, monday.com, ClickUp | [docs](docs/setup-project-tracker.md) |
 | GitHub | `GITHUB_TOKEN`, `GITHUB_REPO` | [docs](docs/setup-github.md) |
 | Luma | `LUMA_API_KEY` | Key is in your Luma calendar settings |
 
@@ -175,6 +175,10 @@ Friday triage. Inert until you name a channel.
 **Tracking discipline** — UTM builder, UTM auditor, and campaign-name checker
 that enforce your conventions, because one `paid_social` among a thousand
 `paid-social` splits a channel in every report you will run this year.
+
+**One tracker interface** — the same file/query/comment tools whether your team
+runs Linear, Asana, Jira, monday.com, or ClickUp. Switching is a credential
+change, and the agent picks up each tool's own vocabulary.
 
 **SOQL console** at `/console`, **usage analytics** at `/analytics`, and an
 **audience vocabulary** at `/audience-vocab` that teaches the agent what your

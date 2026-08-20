@@ -12,7 +12,7 @@ const DOCS = [
   { slug: "hubspot", file: "setup-hubspot.md", title: "Connect HubSpot", step: "06" },
   { slug: "marketo", file: "setup-marketo.md", title: "Connect Marketo", step: "07" },
   { slug: "google-ads", file: "setup-google-ads.md", title: "Connect Google Ads", step: "08" },
-  { slug: "project-management", file: "setup-linear.md", title: "Connect Linear", step: "09" },
+  { slug: "project-management", file: "setup-project-tracker.md", title: "Connect a Project Tracker", step: "09" },
   { slug: "github", file: "setup-github.md", title: "Connect GitHub", step: "10" },
   { slug: "luma", file: "setup-luma.md", title: "Connect Luma", step: "11" },
   { slug: "extending", file: "adding-integrations.md", title: "Adding Integrations", step: "12" },

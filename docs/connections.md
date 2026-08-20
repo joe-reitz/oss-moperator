@@ -27,10 +27,26 @@ These are the ones that actually change what a marketing ops agent can do.
 | `npx eve add connection/bitly` | Short links and QR codes for print, events, and anywhere a UTM string will not fit. |
 | `npx eve add connection/webflow` | The marketing site itself — pages, CMS collections, publishing. |
 | `npx eve add extension/github-tools` | A fuller GitHub surface than the single commit reader here, with per-user OAuth and approval rules. |
-| `npx eve add connection/linear` | Linear's own MCP server: cycles, projects, comments. Broader than the two typed tools in this repo. |
+| `npx eve add connection/linear` | Linear's own MCP server: cycles, projects, comments. Broader than the shared tracker interface, at the cost of being Linear-specific. |
 
 Connections are always on once the file exists, so only add what you want the
 model reaching for. Delete `agent/connections/<name>.ts` to remove one.
+
+## A tracker's own MCP server
+
+The built-in tracker tools (`agent/lib/trackers/`) deliberately expose the
+shallow set that maps across Linear, Asana, Jira, monday.com, and ClickUp: file,
+query, comment, move. That is most of what a marketing ops agent needs, and it
+means switching trackers is a credential change.
+
+When you need the vendor's full surface — Jira sprints, Asana portfolios, Linear
+cycles — add their MCP server alongside it. Atlassian and Asana both run one, and
+`connection/linear` is in the registry. Two things to keep in mind:
+
+- Connection tools are **not** covered by `agent/lib/approval.ts`, because you did
+  not author them. Set `approval` on the connection.
+- The model will then have two ways to file an issue. Say which is preferred in
+  `agent/instructions/`, or disable the overlapping half.
 
 ## Memory across conversations
 

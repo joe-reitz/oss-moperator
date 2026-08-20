@@ -16,6 +16,8 @@
  * client, and a `agent/tools/<name>.ts` file. See docs/adding-integrations.md.
  */
 
+import { trackerSummary } from "./trackers"
+
 export interface IntegrationManifest {
   /** Stable id, matching the tool file name. */
   id: string
@@ -27,8 +29,14 @@ export interface IntegrationManifest {
   capabilities: string[]
   /** Example prompts, shown to users when they ask what the agent can do. */
   examples: string[]
-  /** Env vars that must be set. Named so the setup error can be specific. */
+  /** Env vars that must all be set. Named so the setup error can be specific. */
   requires: string[]
+  /**
+   * Alternative credential sets: the integration is active when *any one* group
+   * is fully set. Used by the project tracker, which is one capability backed by
+   * a choice of five services.
+   */
+  anyOf?: string[][]
   /** Docs page for setup, relative to the repo root. */
   setupGuide?: string
 }
@@ -119,20 +127,31 @@ export const INTEGRATIONS: IntegrationManifest[] = [
     setupGuide: "docs/setup-google-ads.md",
   },
   {
-    id: "linear",
-    name: "Linear",
-    description: "Issue tracking — bugs, feature requests, and marketing ops work",
+    id: "tracker",
+    name: "Project tracker",
+    description:
+      "Where work gets filed — Linear, Asana, Jira, monday.com, or ClickUp",
     capabilities: [
-      "File bugs and feature requests with an AI-written title, body, and priority",
-      "Query issues by status, assignee, label, or creation date",
+      "File a bug, request, or task with a written title, body, priority, and labels",
+      "Find open work by status, assignee, label, or free text",
+      "List the projects, boards, or lists available to file into",
+      "Comment on an item, and move it between statuses",
     ],
     examples: [
       "Bug: the pricing page form drops UTM parameters",
       "What's sitting in triage right now?",
+      "File a task to update the Q1 nurture copy, due Friday, high priority",
       "Show me everything filed this week",
     ],
-    requires: ["LINEAR_API_KEY"],
-    setupGuide: "docs/setup-linear.md",
+    requires: [],
+    anyOf: [
+      ["LINEAR_API_KEY"],
+      ["ASANA_ACCESS_TOKEN"],
+      ["JIRA_SITE", "JIRA_EMAIL", "JIRA_API_TOKEN"],
+      ["MONDAY_API_TOKEN"],
+      ["CLICKUP_API_TOKEN"],
+    ],
+    setupGuide: "docs/setup-project-tracker.md",
   },
   {
     id: "github",
@@ -164,18 +183,46 @@ export const INTEGRATIONS: IntegrationManifest[] = [
   },
 ]
 
-/** Every env var in `requires` is present and non-empty. */
+/** Configured when every var in `requires` is set, or any `anyOf` group is. */
 export function isConfigured(id: string): boolean {
   const manifest = INTEGRATIONS.find((entry) => entry.id === id)
   if (!manifest) return false
-  return manifest.requires.every((key) => !!process.env[key])
+
+  if (manifest.anyOf?.length) {
+    return manifest.anyOf.some((group) => group.every((key) => !!process.env[key]))
+  }
+  return manifest.requires.length > 0
+    ? manifest.requires.every((key) => !!process.env[key])
+    : false
 }
 
 /** Which env vars are missing, for a specific setup error. */
 export function missingEnv(id: string): string[] {
   const manifest = INTEGRATIONS.find((entry) => entry.id === id)
   if (!manifest) return []
+
+  if (manifest.anyOf?.length) {
+    // Report the group the operator was most likely trying to configure: the one
+    // with the most variables already set. Ranking purely by fewest-missing gets
+    // this wrong — someone who has set JIRA_SITE and nothing else should be told
+    // about JIRA_EMAIL and JIRA_API_TOKEN, not that Linear needs one variable.
+    const ranked = manifest.anyOf
+      .map((group) => ({
+        set: group.filter((key) => !!process.env[key]).length,
+        missing: group.filter((key) => !process.env[key]),
+      }))
+      .sort((a, b) => b.set - a.set || a.missing.length - b.missing.length)
+    return ranked[0]?.missing ?? []
+  }
   return manifest.requires.filter((key) => !process.env[key])
+}
+
+/** How to turn an inactive integration on, for the prompt and setup errors. */
+function requirementSummary(manifest: IntegrationManifest): string {
+  if (manifest.anyOf?.length) {
+    return `any one of: ${manifest.anyOf.map((group) => group.join(" + ")).join(" | ")}`
+  }
+  return manifest.requires.join(", ")
 }
 
 export function activeIntegrations(): IntegrationManifest[] {
@@ -204,7 +251,7 @@ export function renderCapabilities(): string {
       ""
     )
     for (const entry of INTEGRATIONS) {
-      lines.push(`- ${entry.name}: ${entry.requires.join(", ")}`)
+      lines.push(`- ${entry.name}: ${requirementSummary(entry)}`)
     }
     return lines.join("\n")
   }
@@ -212,6 +259,10 @@ export function renderCapabilities(): string {
   lines.push("## Connected systems", "")
   for (const entry of active) {
     lines.push(`### ${entry.name} — ${entry.description}`)
+    if (entry.id === "tracker") {
+      const summary = trackerSummary()
+      if (summary) lines.push(summary, "")
+    }
     for (const capability of entry.capabilities) lines.push(`- ${capability}`)
     lines.push("", "Things people ask for:")
     for (const example of entry.examples) lines.push(`- "${example}"`)
@@ -227,7 +278,7 @@ export function renderCapabilities(): string {
       ""
     )
     for (const entry of inactive) {
-      lines.push(`- ${entry.name} — needs ${entry.requires.join(", ")}`)
+      lines.push(`- ${entry.name} — needs ${requirementSummary(entry)}`)
     }
   }
 
