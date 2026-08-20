@@ -24,6 +24,9 @@ export default function ConsoleClient() {
   const [result, setResult] = useState<RunResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
+  // What the agent had to guess. Empty means it verified every field name
+  // against the schema — which is the point of routing this through the agent.
+  const [assumptions, setAssumptions] = useState<string[]>([])
   const [isRunning, setIsRunning] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([])
@@ -105,6 +108,7 @@ export default function ConsoleClient() {
 
   async function handleGenerate() {
     setError(null)
+    setAssumptions([])
     setIsGenerating(true)
     try {
       const res = await fetch("/api/console/generate", {
@@ -115,6 +119,7 @@ export default function ConsoleClient() {
       const data = await res.json()
       if (!data.success) throw new Error(data.error || "Generation failed")
       setSoql(data.soql)
+      setAssumptions(Array.isArray(data.assumptions) ? data.assumptions : [])
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed")
     } finally {
@@ -212,9 +217,22 @@ export default function ConsoleClient() {
             disabled={isGenerating || !prompt.trim()}
             className="bg-green-700 hover:bg-green-600 disabled:bg-gray-800 disabled:text-gray-600 text-white text-sm font-medium px-4 py-2 rounded transition-colors"
           >
-            {isGenerating ? "Generating..." : "Generate SOQL →"}
+            {isGenerating ? "Checking the schema…" : "Generate SOQL →"}
           </button>
         </section>
+
+        {assumptions.length > 0 && (
+          <div className="border border-yellow-800 bg-yellow-950/20 rounded p-3 space-y-1">
+            <p className="text-xs uppercase tracking-wider text-yellow-600">
+              Assumptions the agent made
+            </p>
+            <ul className="text-sm text-gray-300 space-y-1">
+              {assumptions.map((assumption) => (
+                <li key={assumption}>— {assumption}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <section className="border border-gray-800 rounded-lg p-4 space-y-3">
           <label className="block">

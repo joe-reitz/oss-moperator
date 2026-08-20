@@ -69,7 +69,7 @@ Or use the shorthand:
 @mOperator bug: navigation menu is broken
 ```
 
-If successful, an issue will be created in Linear with an auto-enriched title and description.
+The agent writes the issue itself — an imperative title, a markdown body quoting your original report, a priority, and labels — then files it and replies with the URL. Because it has the whole thread, it can pull in context you mentioned earlier without you repeating it.
 
 ## How mOperator Uses Linear
 

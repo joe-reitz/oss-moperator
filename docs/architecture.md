@@ -182,9 +182,33 @@ For context on how much of this repo used to be transport plumbing:
 | PKCE helpers, OAuth state store, three callback routes | `defineInteractiveAuthorization` |
 | Luma pending-event store and confirmation-card builder | the approval prompt is the confirmation |
 | `cli.ts` and `POST /api/agent` | `npm run agent` and `/chat` |
+| A second, context-blind model writing Linear issue titles | the agent writes them; it has the whole thread |
+| A parallel SOQL prompt in the console route | the console asks the agent, so there is one SOQL brain |
 
 The API clients under `agent/lib/<service>/` are the same code as before. That was
 always the part worth keeping.
+
+## One brain
+
+There is exactly one place a model gets called: the agent. No route, tool, or
+helper reaches for `generateText` on its own.
+
+That was not free. The SOQL console had its own completion with its own SOQL
+prompt and its own copy of the vocabulary injection — two implementations of the
+same thing, drifting apart. It now posts to the agent's session API with an
+`outputSchema`, forwarding the caller's cookie so the run is attributed to the
+signed-in person. The console gained the `soql-authoring` skill and
+`describe_salesforce_object` in the process, so it verifies field names instead of
+guessing at them, which its old prompt explicitly told it to do.
+
+Similarly, `file_linear_issue` used to hand the raw message to a small model that
+wrote the title and body. That model saw one sentence; the agent calling it had
+the entire thread. The tool now takes a written issue and files it, and the
+briefing on how to write one lives in the tool description.
+
+The test is `grep -rn "generateText\|generateObject" src/ agent/` returning
+nothing. If you add a feature that wants its own model call, ask whether it should
+be a tool or a subagent instead.
 
 ## Further reading
 

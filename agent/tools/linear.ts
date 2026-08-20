@@ -1,14 +1,18 @@
 /**
  * Linear tools.
  *
- * `file_linear_issue` keeps the AI enrichment this repo has always had: you say
- * "the pricing form drops UTMs" and it files a real issue with a written title,
- * a markdown body, a priority, and labels — rather than an issue titled after
- * whatever someone typed into Slack.
+ * `file_linear_issue` used to hand the raw message to a second, smaller model
+ * that wrote the title, body, priority, and labels. That model saw only the one
+ * sentence — while the agent calling it had the whole Slack thread, the reporter,
+ * and everything said before the request. The second model was strictly
+ * worse-informed than the first.
+ *
+ * So the agent writes the issue now, and this tool files it. The description
+ * below is the whole briefing: it is what turns "the pricing form is broken" into
+ * an issue an engineer can act on.
  *
  * If you would rather use Linear's own MCP server for broader coverage (cycles,
- * projects, comments), run `eve add connection/linear` and delete this file.
- * See docs/connections.md.
+ * projects, comments), run `eve add connection/linear`. See docs/connections.md.
  */
 
 import { defineDynamic, defineTool } from "eve/tools"
@@ -16,7 +20,6 @@ import { z } from "zod"
 
 import { isConfigured } from "../lib/integrations"
 import * as client from "../lib/linear/client"
-import { enrichIssueFromMessage } from "../lib/linear/enrich"
 
 function fail(error: unknown, fallback: string) {
   return {
@@ -32,45 +35,55 @@ export default defineDynamic({
 
       return {
         file_linear_issue: defineTool({
-          description: `File a bug, feature request, or task in Linear from a plain description.
+          description: `File a bug, feature request, or task in Linear.
 
-Pass the user's own words as \`report\` and let this tool write the title, body, priority, and labels — that is what it is for. Only set the explicit fields when the user has clearly dictated them.
+You write the issue, not the reporter. Take what they said, plus anything useful from the conversation, and turn it into something an engineer can pick up cold.
 
-Always include the returned URL in your reply so the user can click through.`,
+**title** — imperative and specific, under 80 characters. "Pricing page form drops UTM parameters", not "form bug" and not the reporter's sentence verbatim.
+
+**description** — markdown. For a bug: what happens, what should happen, and how to reproduce it if that is known. For a feature: the underlying need, not the proposed solution. Quote the original report at the end so context is not lost, and name who reported it.
+
+Never invent reproduction steps, error messages, or affected versions. If you do not know, say so in the issue — a guess sends someone down the wrong path.
+
+**priority** — 1 Urgent (broken in production, losing money or data), 2 High (broken but there is a workaround), 3 Medium (the default; most things), 4 Low. Do not mark something Urgent because the reporter is annoyed; mark it Urgent because of impact.
+
+**labels** — one to three. Only names that exist in the team; unmatched names are dropped silently, so prefer conventional ones over inventing.
+
+Always include the returned URL in your reply.`,
           inputSchema: z.object({
-            report: z
-              .string()
-              .describe("What the user said, in their words. The tool writes it up."),
-            kind: z
-              .enum(["bug", "feature"])
-              .describe("bug for something broken, feature for something wanted"),
             title: z
               .string()
-              .optional()
-              .describe("Override the generated title. Usually leave this out."),
+              .max(120)
+              .describe("Imperative, specific, under 80 characters"),
             description: z
               .string()
-              .optional()
-              .describe("Override the generated body. Usually leave this out."),
+              .describe("Markdown body, including the original report"),
+            kind: z
+              .enum(["bug", "feature", "task"])
+              .describe("What this is, used for labelling when no labels are given"),
             priority: z
               .number()
+              .int()
               .min(1)
               .max(4)
               .optional()
-              .describe("1=Urgent, 2=High, 3=Medium, 4=Low. Overrides the guess."),
+              .describe("1 Urgent, 2 High, 3 Medium, 4 Low. Defaults to 3."),
             labels: z
               .array(z.string())
+              .max(3)
               .optional()
-              .describe("Label names to apply. Overrides the guesses."),
+              .describe("Existing Linear label names"),
           }),
-          async execute({ report, kind, title, description, priority, labels }) {
+          async execute({ title, description, kind, priority, labels }) {
             try {
-              const enriched = await enrichIssueFromMessage(report, kind)
               const result = await client.createIssue({
-                title: title ?? enriched.title,
-                description: description ?? enriched.description,
-                priority: priority ?? enriched.priority,
-                labelNames: labels ?? enriched.labelSuggestions,
+                title,
+                description,
+                priority: priority ?? (kind === "bug" ? 2 : 3),
+                labelNames:
+                  labels && labels.length > 0
+                    ? labels
+                    : [kind === "bug" ? "Bug" : "Feature"],
               })
               return { success: true as const, ...result }
             } catch (error) {

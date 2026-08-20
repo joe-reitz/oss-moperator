@@ -22,6 +22,16 @@ jobs:
       - name: Agent discovery
         run: npm run agent:info
 
+      # One brain: the agent is the only thing that calls a model. A route or
+      # helper reaching for generateText is a parallel implementation that will
+      # drift from the agent's skills and vocabulary.
+      - name: No model calls outside the agent
+        run: |
+          if grep -rn "generateText\|generateObject\|streamText\|createAnthropic\|createOpenAI" src/ agent/ evals/; then
+            echo "::error::Model calls must go through the agent. Use a tool, a subagent, or the eve client SDK."
+            exit 1
+          fi
+
       - name: Typecheck
         run: npm run typecheck
 

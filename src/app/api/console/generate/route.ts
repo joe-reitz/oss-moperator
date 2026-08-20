@@ -1,42 +1,68 @@
 /**
  * POST /api/console/generate
  *
- * Translate a natural-language prompt into a SOQL query using the AI Gateway.
- * Uses the same audience vocabulary the Slack agent uses for marketer-term →
- * canonical-field mapping.
+ * Turn a natural-language prompt from the SOQL console into a query.
+ *
+ * This used to be a second SOQL brain: its own system prompt, its own copy of
+ * the vocabulary injection, its own model choice — a parallel implementation
+ * that drifted from the agent every time someone improved one and not the other.
+ * Worse, it had no tools, so its prompt literally told it to "make a reasonable
+ * guess" at field names.
+ *
+ * Now it asks the agent. That means the console gets, for free:
+ *
+ *   - the `soql-authoring` skill, with the relationship-traversal and date-literal
+ *     rules that took real debugging to write down
+ *   - the audience vocabulary, from the same source as everywhere else
+ *   - `describe_salesforce_object`, so it can *check* a field name instead of
+ *     guessing at one
+ *
+ * The caller's session cookie is forwarded, so the agent runs as the signed-in
+ * person rather than as an anonymous service — the same identity the Slack
+ * agent would see.
  */
 
+import { Client } from "eve/client"
 import { NextRequest } from "next/server"
-import { generateText } from "ai"
-import { AdminAuthError, requireAdmin } from "@/lib/admin-auth"
-import { formatVocabularyForPrompt } from "@agent/lib/vocabulary"
+import { z } from "zod"
 
-/**
- * Same Vercel AI Gateway routing as the agent, so the console and the Slack
- * agent share one credential and one model choice.
- */
-const SOQL_MODEL = process.env.AI_MODEL || "anthropic/claude-opus-4.8"
+import { AdminAuthError, requireAdmin } from "@/lib/admin-auth"
+import { validateReadOnlySoql } from "@agent/lib/soql"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 60
+/** An agent turn that inspects schema takes longer than a single completion. */
+export const maxDuration = 300
 
 const MAX_PROMPT_LENGTH = 2000
 
-const SYSTEM_PROMPT = `You are a Salesforce SOQL expert. The user describes what data they need; you return a single SELECT query that retrieves it.
+const generatedQuery = z.object({
+  soql: z
+    .string()
+    .describe("The SOQL query, with no markdown fences and no commentary"),
+  assumptions: z
+    .array(z.string())
+    .describe(
+      "Anything you had to guess — an ambiguous term, a field you could not verify, a date range you inferred. Empty when the request was unambiguous."
+    ),
+})
 
-Rules:
-- Return ONLY the SOQL query — no explanation, no markdown fences, no commentary.
-- The query MUST be a single SELECT statement. No INSERT/UPDATE/DELETE/UPSERT.
-- Use the standard Salesforce object names (Contact, Lead, Account, Campaign, CampaignMember, Opportunity, Task, Event, etc.).
-- For cross-object filters, use relationship syntax: "SELECT Contact.Email FROM CampaignMember WHERE Contact.Custom_Field__c = 'value'"
-- Cap the result with LIMIT when the prompt suggests a small set (e.g., "top 10", "first 50"). For broad queries, omit LIMIT — the server will paginate.
-- Use SFDC date literals where useful: TODAY, LAST_QUARTER, THIS_FISCAL_YEAR, LAST_N_DAYS:30, etc.
-- When the prompt is ambiguous, make a reasonable guess and use comments inside the SELECT clause to flag assumptions if needed.
-- If the prompt could be answered with a COUNT, prefer SELECT COUNT() FROM ... over SELECT Id and counting in the client.
+const INSTRUCTION = `Write a single read-only SOQL query for the request below. This is for the SOQL console, so return the query itself — do not run it, and do not export anything.
 
-Below is the curated marketer-term → canonical-field vocabulary for this org. Use these EXACT API names when the user references the listed terms. Do not invent fields.
+Load the soql-authoring skill first. Verify every object and field name with describe_salesforce_object rather than guessing; that is the whole reason this goes through you instead of a bare completion. Consult the audience vocabulary for any marketer term.
 
-{{VOCABULARY}}`
+Add a LIMIT only when the request implies a small set ("top 10", "a few examples"). Leave it off otherwise — the console paginates. Prefer SELECT COUNT() when the answer is a number.
+
+Record anything you had to guess in "assumptions". An empty list means the request was unambiguous and every field name was verified.
+
+Request:`
+
+/** Same-origin base URL for the agent's routes, which withEve mounts here. */
+function agentHost(req: NextRequest): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL
+  const proto = req.headers.get("x-forwarded-proto") ?? "http"
+  const host = req.headers.get("host")
+  return `${proto}://${host}`
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -49,11 +75,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json().catch(() => ({}))
-    const prompt = typeof body.prompt === "string" ? body.prompt.trim() : ""
+    const body = await req.json()
+    const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : ""
 
     if (!prompt) {
-      return Response.json({ success: false, error: "Prompt is required" }, { status: 400 })
+      return Response.json(
+        { success: false, error: "Prompt is required" },
+        { status: 400 }
+      )
     }
     if (prompt.length > MAX_PROMPT_LENGTH) {
       return Response.json(
@@ -62,22 +91,46 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const vocabulary = (await formatVocabularyForPrompt()) || "(no curated vocabulary — use standard SFDC field names)"
-    const system = SYSTEM_PROMPT.replace("{{VOCABULARY}}", vocabulary)
-
-    const { text } = await generateText({
-      model: SOQL_MODEL,
-      system,
-      messages: [{ role: "user", content: prompt }],
+    const client = new Client({
+      host: agentHost(req),
+      // Forward the admin session so the agent authenticates the actual person.
+      headers: { cookie: req.headers.get("cookie") ?? "" },
     })
 
-    const cleaned = text
-      .trim()
-      .replace(/^```(?:soql|sql)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim()
+    const { response } = await client.sessions.create<z.infer<typeof generatedQuery>>({
+      message: `${INSTRUCTION}\n\n${prompt}`,
+      outputSchema: generatedQuery,
+    })
 
-    return Response.json({ success: true, soql: cleaned })
+    const result = await response.result()
+    const soql = result.data?.soql?.trim()
+
+    if (!soql) {
+      return Response.json(
+        {
+          success: false,
+          error:
+            "The agent did not return a query. It may have needed a clarification — try being more specific about the object and the time range.",
+        },
+        { status: 502 }
+      )
+    }
+
+    // The console runs whatever comes back, so re-validate here rather than
+    // trusting the model. Same check the run and export routes apply.
+    const check = validateReadOnlySoql(soql)
+    if (!check.ok) {
+      return Response.json(
+        { success: false, error: `Generated a non-read-only query (${check.reason})` },
+        { status: 502 }
+      )
+    }
+
+    return Response.json({
+      success: true,
+      soql,
+      assumptions: result.data?.assumptions ?? [],
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : "Generation failed"
     return Response.json({ success: false, error: message }, { status: 500 })
