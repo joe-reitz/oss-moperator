@@ -14,13 +14,14 @@ const DOCS = [
   { slug: "google-ads", file: "setup-google-ads.md", title: "Connect Google Ads", step: "08" },
   { slug: "project-management", file: "setup-project-tracker.md", title: "Connect a Project Tracker", step: "09" },
   { slug: "github", file: "setup-github.md", title: "Connect GitHub", step: "10" },
-  { slug: "luma", file: "setup-luma.md", title: "Connect Luma", step: "11" },
-  { slug: "extending", file: "adding-integrations.md", title: "Adding Integrations", step: "12" },
-  { slug: "connections", file: "connections.md", title: "More Capabilities", step: "13" },
-  { slug: "design-your-own", file: "design-your-own.md", title: "Design Your Own with AI", step: "14" },
-  { slug: "architecture", file: "architecture.md", title: "Architecture", step: "15" },
-  { slug: "security", file: "security.md", title: "Security Setup", step: "16" },
-  { slug: "sfdc-per-user-oauth", file: "sfdc-per-user-oauth.md", title: "Per-User Salesforce OAuth", step: "17" },
+  { slug: "knak", file: "setup-knak.md", title: "Connect Knak", step: "11" },
+  { slug: "luma", file: "setup-luma.md", title: "Connect Luma", step: "12" },
+  { slug: "extending", file: "adding-integrations.md", title: "Adding Integrations", step: "13" },
+  { slug: "connections", file: "connections.md", title: "More Capabilities", step: "14" },
+  { slug: "design-your-own", file: "design-your-own.md", title: "Design Your Own with AI", step: "15" },
+  { slug: "architecture", file: "architecture.md", title: "Architecture", step: "16" },
+  { slug: "security", file: "security.md", title: "Security Setup", step: "17" },
+  { slug: "sfdc-per-user-oauth", file: "sfdc-per-user-oauth.md", title: "Per-User Salesforce OAuth", step: "18" },
 ]
 
 function markdownToHtml(md: string): string {

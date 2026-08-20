@@ -80,6 +80,32 @@ export const config = {
   },
 
   /**
+   * Knak, the on-brand email builder. Only the naming convention lives here;
+   * brands, folders, and themes are looked up by name at runtime so they can
+   * change in Knak without a deploy.
+   */
+  knak: {
+    /**
+     * Asset name template. Knak cannot rename an asset after creation, so this
+     * is the one chance to get it right. Empty tokens collapse rather than
+     * leaving gaps. Tokens: region, type, brand, title, date, ticket.
+     */
+    assetNamePattern:
+      process.env.KNAK_ASSET_NAME_PATTERN ||
+      "{region}_{type}_{brand}_{title}_{date}_{ticket}",
+    /** Brand to assume when a request does not name one. */
+    defaultBrand: process.env.KNAK_DEFAULT_BRAND || "",
+    /**
+     * Folder path under the brand that generated assets land in, e.g.
+     * "Campaigns/Lifecycle". Folders nest, so this is walked segment by segment.
+     */
+    folderPath: (process.env.KNAK_FOLDER_PATH || "")
+      .split("/")
+      .map((segment) => segment.trim())
+      .filter(Boolean),
+  },
+
+  /**
    * Where scheduled digests post. Each is a Slack channel ID (e.g. "C0123ABC").
    * A schedule with no channel configured stays inert — nothing fires until you
    * opt in, so a fresh fork never spams a workspace.

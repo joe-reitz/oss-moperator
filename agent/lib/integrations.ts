@@ -166,6 +166,25 @@ export const INTEGRATIONS: IntegrationManifest[] = [
     setupGuide: "docs/setup-github.md",
   },
   {
+    id: "knak",
+    name: "Knak",
+    description: "On-brand email and landing-page builder wired to your design system",
+    capabilities: [
+      "Build an on-brand email from approved copy, reproduced verbatim",
+      "Build one from a description when no copy exists yet, letting Knak write it",
+      "Browse brands, campaigns (asset folders), and themes",
+      "Pull an asset's rendered HTML to QA links, UTMs, subject, and preheader",
+      "Apply the org's asset naming convention, which Knak cannot change after creation",
+    ],
+    examples: [
+      "Build the AI Gateway launch email — here's the approved copy",
+      "Make me a newsletter for the March product roundup",
+      "QA the links on the webinar invite before it goes out",
+    ],
+    requires: ["KNAK_API_KEY"],
+    setupGuide: "docs/setup-knak.md",
+  },
+  {
     id: "luma",
     name: "Luma",
     description: "Event registration pages with compliance questions baked in",

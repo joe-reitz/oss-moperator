@@ -31,11 +31,15 @@ and deployed as a single Next.js project.
   → shows the current budget and the monthly delta, then requires a
     designated ad-spend approver to sign off
 
+"Build this email — here's the approved copy"
+  → hands the brief to Knak, which renders it on-brand, and reports back the
+    asset with the copy reproduced verbatim and named to your convention
+
 "Bug: the pricing form drops UTM parameters"
-  → files a Linear issue with a written title, body, priority, and labels
+  → files an issue with a written title, body, priority, and labels
 ```
 
-It reaches Salesforce, HubSpot, Marketo, Google Ads, GitHub, Luma, and your
+It reaches Salesforce, HubSpot, Marketo, Google Ads, Knak, GitHub, Luma, and your
 project tracker — Linear, Asana, Jira, monday.com, or ClickUp — whichever you
 configure, plus web search, a Linux sandbox, and its own CRM-safety rules.
 
@@ -103,6 +107,7 @@ Set the variables, restart. That is the whole step.
 | Google Ads | `GOOGLE_ADS_CLIENT_ID`, `..._SECRET`, `..._DEVELOPER_TOKEN`, `..._CUSTOMER_ID` | [docs](docs/setup-google-ads.md) |
 | Project tracker | any one of Linear, Asana, Jira, monday.com, ClickUp | [docs](docs/setup-project-tracker.md) |
 | GitHub | `GITHUB_TOKEN`, `GITHUB_REPO` | [docs](docs/setup-github.md) |
+| Knak | `KNAK_API_KEY` | [docs](docs/setup-knak.md) |
 | Luma | `LUMA_API_KEY` | Key is in your Luma calendar settings |
 
 The agent only sees tools for what is configured, so it never offers to do
