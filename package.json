@@ -1,22 +1,26 @@
 {
   "name": "moperator",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "cli": "tsx cli.ts"
+    "agent": "eve dev",
+    "agent:info": "eve info",
+    "agent:build": "eve build",
+    "eval": "eve eval",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.31",
-    "@ai-sdk/openai": "^3.0.23",
     "@linear/sdk": "^73.0.0",
     "@upstash/redis": "^1.36.2",
+    "@vercel/connect": "0.4.3",
     "@vercel/functions": "^3.4.0",
-    "ai": "^6.0.62",
+    "ai": "^7.0.58",
     "dotenv": "^17.2.3",
+    "eve": "^0.39.0",
     "jsforce": "^3.10.13",
     "next": "16.1.6",
     "react": "19.2.3",
@@ -28,13 +32,15 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/jsforce": "^1.11.6",
-    "@types/node": "^20",
+    "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
-    "tsx": "^4.21.0",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }
