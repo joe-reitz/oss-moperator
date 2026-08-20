@@ -80,6 +80,36 @@ export const config = {
   },
 
   /**
+   * Salesforce write identity — who the CRM records as having made a change.
+   *
+   * This is an audit decision, not a convenience one. Salesforce already has a
+   * first-class audit trail (CreatedById, LastModifiedById, Field History
+   * Tracking, Setup Audit Trail), and it is authoritative, queryable, and
+   * already inside your compliance regime. The only way to make it *mean*
+   * anything for agent-driven changes is for each person's writes to carry
+   * their own Salesforce identity.
+   *
+   * So the default is `user`: a write is attributed to the person who asked for
+   * it, and if it cannot be, it does not happen. Falling back to a shared
+   * service account silently would produce exactly the audit trail you think
+   * you have and do not.
+   *
+   *   "user"      writes require the requester's own Salesforce identity;
+   *               reads use the service account (no attribution value, and
+   *               nobody should sign in just to ask a question)
+   *   "user-all"  reads too, so Salesforce sharing rules and field-level
+   *               security apply per person — the agent cannot show someone
+   *               records they could not open themselves
+   *   "service"   everything uses the shared service account. Explicit opt-out;
+   *               every change reads as having been made by the bot.
+   */
+  salesforceIdentity: (["user", "user-all", "service"] as const).includes(
+    (process.env.SFDC_IDENTITY || "") as "user" | "user-all" | "service"
+  )
+    ? (process.env.SFDC_IDENTITY as "user" | "user-all" | "service")
+    : "user",
+
+  /**
    * Knak, the on-brand email builder. Only the naming convention lives here;
    * brands, folders, and themes are looked up by name at runtime so they can
    * change in Knak without a deploy.

@@ -5,9 +5,14 @@
  * configured. An install with no CRM gets no CRM tools, which is what stops the
  * agent from promising a query it cannot run.
  *
- * Writes are gated by the policies in `agent/lib/approval.ts`. When
- * SFDC_USER_OAUTH_ENABLED=true, each write resolves the caller's own Salesforce
- * token first, so `CreatedById` shows the person rather than a service account.
+ * Writes are gated by the policies in `agent/lib/approval.ts`, and separately
+ * carry the **requester's own Salesforce identity** — so `CreatedById` and
+ * `LastModifiedById` name a person and the org's own audit trail is the audit
+ * trail. Reads use the service account, because attribution buys nothing on a
+ * read and nobody should sign in to ask a question.
+ *
+ * A write that cannot be attributed is refused rather than downgraded. See
+ * `agent/lib/salesforce/auth.ts` for why that is the whole point.
  */
 
 import { defineDynamic, defineTool } from "eve/tools"
@@ -18,9 +23,12 @@ import { config } from "../lib/config"
 import { isConfigured, missingEnv } from "../lib/integrations"
 import * as sf from "../lib/salesforce/client"
 import {
+  hasSfdcGrant,
   isSfdcAuthError,
   requireSfdcReauth,
-  resolveSfdcCredentials,
+  resolveSfdcRead,
+  resolveSfdcWrite,
+  type SfdcIdentity,
 } from "../lib/salesforce/auth"
 import { validateReadOnlySoql } from "../lib/soql"
 import { writeCsvToWorkspace } from "../lib/workspace"
@@ -34,6 +42,29 @@ function fail(error: unknown, fallback: string) {
     error: error instanceof Error ? error.message : fallback,
   }
 }
+
+/**
+ * Turn a resolved identity into the credentials the client wants, or return the
+ * refusal. `null` credentials mean the service account, which is correct for
+ * reads and an explicit opt-in for writes — never a silent downgrade.
+ */
+function credentialsOf(identity: SfdcIdentity):
+  | { ok: true; credentials: SfdcCredentialsArg; actor: string }
+  | { ok: false; error: { success: false; error: string } } {
+  if (identity.kind === "refused") {
+    return { ok: false, error: { success: false as const, error: identity.reason } }
+  }
+  if (identity.kind === "service") {
+    return { ok: true, credentials: null, actor: "the service account" }
+  }
+  return { ok: true, credentials: identity.credentials, actor: identity.email }
+}
+
+type SfdcCredentialsArg = Parameters<typeof sf.query>[1] extends
+  | { credentials?: infer C }
+  | undefined
+  ? C
+  : never
 
 export default defineDynamic({
   events: {
@@ -67,7 +98,10 @@ Examples:
             }
 
             try {
-              const credentials = await resolveSfdcCredentials(ctx)
+              const identity = await resolveSfdcRead(ctx)
+              const resolved = credentialsOf(identity)
+              if (!resolved.ok) return resolved.error
+              const credentials = resolved.credentials
               const records = await sf.queryAllRecords(soql, { credentials })
               const truncated = records.length > INLINE_RECORD_LIMIT
 
@@ -103,7 +137,10 @@ Examples:
           }),
           async execute({ object_name, name_filter }, ctx) {
             try {
-              const credentials = await resolveSfdcCredentials(ctx)
+              const identity = await resolveSfdcRead(ctx)
+              const resolved = credentialsOf(identity)
+              if (!resolved.ok) return resolved.error
+              const credentials = resolved.credentials
               const described = await sf.describeObject(object_name, { credentials })
 
               type SfField = {
@@ -166,7 +203,10 @@ Examples:
           }),
           async execute({ name_filter, custom_only }, ctx) {
             try {
-              const credentials = await resolveSfdcCredentials(ctx)
+              const identity = await resolveSfdcRead(ctx)
+              const resolved = credentialsOf(identity)
+              if (!resolved.ok) return resolved.error
+              const credentials = resolved.credentials
               const global = await sf.describeGlobal({ credentials })
 
               type SObject = {
@@ -227,7 +267,10 @@ The file lands in /workspace, so you can analyze it with bash (pandas, awk, sort
             }
 
             try {
-              const credentials = await resolveSfdcCredentials(ctx)
+              const identity = await resolveSfdcRead(ctx)
+              const resolved = credentialsOf(identity)
+              if (!resolved.ok) return resolved.error
+              const credentials = resolved.credentials
               const records = await sf.queryAllRecords(soql, { credentials })
               const written = await writeCsvToWorkspace(ctx, records, label)
 
@@ -248,6 +291,43 @@ The file lands in /workspace, so you can analyze it with bash (pandas, awk, sort
           },
         }),
 
+        salesforce_connection_status: defineTool({
+          description: `Report how this person's Salesforce writes will be attributed, and whether they have connected their own account.
+
+Use it when someone asks "am I connected to Salesforce?", when a write was refused for an identity reason, or before walking someone through their first write.`,
+          inputSchema: z.object({}),
+          async execute(_input, ctx) {
+            const attributes = (ctx.session.auth.initiator?.attributes ??
+              ctx.session.auth.current?.attributes ??
+              {}) as { email?: string }
+            const email = attributes.email
+            const mode = config.salesforceIdentity
+
+            if (mode === "service") {
+              return {
+                success: true as const,
+                mode,
+                connected: false,
+                summary:
+                  "This install writes to Salesforce as a shared service account (SFDC_IDENTITY=service), so every change is recorded as the integration user rather than as the person who asked for it.",
+              }
+            }
+
+            const connected = await hasSfdcGrant(email)
+            return {
+              success: true as const,
+              mode,
+              email,
+              connected,
+              summary: connected
+                ? `Connected. Salesforce will record ${email} as the author of changes you ask for, so your org's own audit trail and field history attribute them to you.`
+                : email
+                  ? `Not connected yet. The first time you ask for a Salesforce change you will get a one-time sign-in link; after that your changes are recorded under ${email}.`
+                  : "Could not determine your email, so changes cannot be attributed to you. In Slack this usually means the bot is missing the users:read.email scope.",
+            }
+          },
+        }),
+
         // ── Write ───────────────────────────────────────────────────────────
 
         create_salesforce_record: defineTool({
@@ -262,12 +342,16 @@ The file lands in /workspace, so you can analyze it with bash (pandas, awk, sort
           approval: writeApproval(),
           async execute({ object_name, data }, ctx) {
             try {
-              const credentials = await resolveSfdcCredentials(ctx)
+              const identity = await resolveSfdcWrite(ctx)
+              const resolved = credentialsOf(identity)
+              if (!resolved.ok) return resolved.error
+              const credentials = resolved.credentials
               const id = await sf.createRecord(object_name, data, { credentials })
               return {
                 success: true as const,
                 id,
-                message: `Created ${object_name} ${id}`,
+                recorded_as: resolved.actor,
+                message: `Created ${object_name} ${id}, recorded in Salesforce as ${resolved.actor}`,
               }
             } catch (error) {
               if (isSfdcAuthError(error)) requireSfdcReauth(ctx)
@@ -289,11 +373,15 @@ The file lands in /workspace, so you can analyze it with bash (pandas, awk, sort
           approval: writeApproval(),
           async execute({ object_name, record_id, data }, ctx) {
             try {
-              const credentials = await resolveSfdcCredentials(ctx)
+              const identity = await resolveSfdcWrite(ctx)
+              const resolved = credentialsOf(identity)
+              if (!resolved.ok) return resolved.error
+              const credentials = resolved.credentials
               await sf.updateRecord(object_name, record_id, data, { credentials })
               return {
                 success: true as const,
-                message: `Updated ${object_name} ${record_id}`,
+                recorded_as: resolved.actor,
+                message: `Updated ${object_name} ${record_id}, recorded in Salesforce as ${resolved.actor}`,
               }
             } catch (error) {
               if (isSfdcAuthError(error)) requireSfdcReauth(ctx)
@@ -312,11 +400,15 @@ The file lands in /workspace, so you can analyze it with bash (pandas, awk, sort
           approval: deleteApproval(),
           async execute({ object_name, record_id }, ctx) {
             try {
-              const credentials = await resolveSfdcCredentials(ctx)
+              const identity = await resolveSfdcWrite(ctx)
+              const resolved = credentialsOf(identity)
+              if (!resolved.ok) return resolved.error
+              const credentials = resolved.credentials
               await sf.deleteRecord(object_name, record_id, { credentials })
               return {
                 success: true as const,
-                message: `Deleted ${object_name} ${record_id}`,
+                recorded_as: resolved.actor,
+                message: `Deleted ${object_name} ${record_id}, recorded in Salesforce as ${resolved.actor}`,
               }
             } catch (error) {
               if (isSfdcAuthError(error)) requireSfdcReauth(ctx)
@@ -341,7 +433,10 @@ The file lands in /workspace, so you can analyze it with bash (pandas, awk, sort
           }),
           async execute({ object_name, records }, ctx) {
             try {
-              const credentials = await resolveSfdcCredentials(ctx)
+              const identity = await resolveSfdcWrite(ctx)
+              const resolved = credentialsOf(identity)
+              if (!resolved.ok) return resolved.error
+              const credentials = resolved.credentials
               const result = await sf.bulkUpdateRecords(
                 object_name,
                 records as Array<{ Id: string; [key: string]: unknown }>,
@@ -352,9 +447,10 @@ The file lands in /workspace, so you can analyze it with bash (pandas, awk, sort
                 updated: result.success,
                 failed: result.failed,
                 errors: result.errors.slice(0, 10),
+                recorded_as: resolved.actor,
                 message: `Updated ${result.success} of ${records.length} ${object_name} records${
                   result.failed > 0 ? `, ${result.failed} failed` : ""
-                }`,
+                }, recorded in Salesforce as ${resolved.actor}`,
               }
             } catch (error) {
               if (isSfdcAuthError(error)) requireSfdcReauth(ctx)
@@ -380,7 +476,10 @@ The file lands in /workspace, so you can analyze it with bash (pandas, awk, sort
           }),
           async execute({ campaign_id, contact_ids, status }, ctx) {
             try {
-              const credentials = await resolveSfdcCredentials(ctx)
+              const identity = await resolveSfdcWrite(ctx)
+              const resolved = credentialsOf(identity)
+              if (!resolved.ok) return resolved.error
+              const credentials = resolved.credentials
               const result = await sf.addToCampaign(campaign_id, contact_ids, status, {
                 credentials,
               })
@@ -388,7 +487,8 @@ The file lands in /workspace, so you can analyze it with bash (pandas, awk, sort
                 success: true as const,
                 added: result.success,
                 failed: result.failed,
-                message: `Added ${result.success} of ${contact_ids.length} contacts to campaign ${campaign_id}`,
+                recorded_as: resolved.actor,
+                message: `Added ${result.success} of ${contact_ids.length} contacts to campaign ${campaign_id}, recorded in Salesforce as ${resolved.actor}`,
               }
             } catch (error) {
               if (isSfdcAuthError(error)) requireSfdcReauth(ctx)

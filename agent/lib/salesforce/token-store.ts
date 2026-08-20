@@ -8,7 +8,11 @@
  *
  * It does not own long-term persistence: eve caches a resolved token per step,
  * and `getToken` is expected to be the source of truth. So refresh tokens still
- * live here, encrypted with AES-256-GCM, keyed by the eve principal.
+ * live here, encrypted with AES-256-GCM.
+ *
+ * Keyed by **email**, not by channel principal id, so one person has one grant
+ * whether they reach the agent from Slack or from the browser. Email is already
+ * the identity every authorization decision in this repo uses.
  *
  * Records expire 90 days after last use, and every successful use resets the
  * TTL. Someone who stops using the agent quietly ages out and reconnects next
@@ -19,23 +23,23 @@
 import { getRedis } from "../redis"
 import { decryptSecret, encryptSecret } from "./crypto"
 
-const KEY_PREFIX = "moperator:sfdc-user-token:"
+const KEY_PREFIX = "moperator:sfdc-grant:"
 const TTL_SECONDS = 60 * 60 * 24 * 90 // 90 days
 
 interface StoredToken {
-  principalId: string
+  email: string
   instanceUrl: string
   refreshTokenEncrypted: string
   connectedAt: number
   lastUsedAt: number
 }
 
-function key(principalId: string): string {
-  return `${KEY_PREFIX}${principalId}`
+function key(email: string): string {
+  return `${KEY_PREFIX}${email}`
 }
 
 export interface UserSfdcGrant {
-  principalId: string
+  email: string
   instanceUrl: string
   refreshToken: string
   connectedAt: number
@@ -48,7 +52,7 @@ export function tokenStoreAvailable(): boolean {
 }
 
 export async function putGrant(args: {
-  principalId: string
+  email: string
   instanceUrl: string
   refreshToken: string
 }): Promise<void> {
@@ -61,27 +65,27 @@ export async function putGrant(args: {
 
   const now = Date.now()
   const stored: StoredToken = {
-    principalId: args.principalId,
+    email: args.email,
     instanceUrl: args.instanceUrl,
     refreshTokenEncrypted: encryptSecret(args.refreshToken),
     connectedAt: now,
     lastUsedAt: now,
   }
-  await redis.set(key(args.principalId), JSON.stringify(stored), { ex: TTL_SECONDS })
+  await redis.set(key(args.email), JSON.stringify(stored), { ex: TTL_SECONDS })
 }
 
-export async function getGrant(principalId: string): Promise<UserSfdcGrant | null> {
+export async function getGrant(email: string): Promise<UserSfdcGrant | null> {
   const redis = getRedis()
   if (!redis) return null
 
-  const raw = await redis.get<string>(key(principalId))
+  const raw = await redis.get<string>(key(email))
   if (!raw) return null
 
   try {
     const parsed: StoredToken =
       typeof raw === "string" ? JSON.parse(raw) : (raw as unknown as StoredToken)
     return {
-      principalId: parsed.principalId,
+      email: parsed.email,
       instanceUrl: parsed.instanceUrl,
       refreshToken: decryptSecret(parsed.refreshTokenEncrypted),
       connectedAt: parsed.connectedAt,
@@ -96,23 +100,23 @@ export async function getGrant(principalId: string): Promise<UserSfdcGrant | nul
 }
 
 /** Reset the TTL after a successful use. Best-effort. */
-export async function touchGrant(principalId: string): Promise<void> {
+export async function touchGrant(email: string): Promise<void> {
   const redis = getRedis()
   if (!redis) return
-  const raw = await redis.get<string>(key(principalId))
+  const raw = await redis.get<string>(key(email))
   if (!raw) return
   try {
     const parsed: StoredToken =
       typeof raw === "string" ? JSON.parse(raw) : (raw as unknown as StoredToken)
     parsed.lastUsedAt = Date.now()
-    await redis.set(key(principalId), JSON.stringify(parsed), { ex: TTL_SECONDS })
+    await redis.set(key(email), JSON.stringify(parsed), { ex: TTL_SECONDS })
   } catch {
     // Non-critical.
   }
 }
 
-export async function deleteGrant(principalId: string): Promise<void> {
+export async function deleteGrant(email: string): Promise<void> {
   const redis = getRedis()
   if (!redis) return
-  await redis.del(key(principalId))
+  await redis.del(key(email))
 }

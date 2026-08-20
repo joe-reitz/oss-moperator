@@ -18,7 +18,7 @@ openssl rand -hex 32  # → MOPERATOR_TOKEN_ENCRYPTION_KEY  (only needed if you 
 These secrets stay on your server. They never leave it.
 
 - `MOPERATOR_SESSION_SECRET` signs the admin login cookie. If it's missing, the `/console`, `/analytics`, and `/audience-vocab` pages will refuse to load.
-- `MOPERATOR_TOKEN_ENCRYPTION_KEY` encrypts Salesforce refresh tokens at rest in Redis. Only required if you turn on `SFDC_USER_OAUTH_ENABLED=true`.
+- `MOPERATOR_TOKEN_ENCRYPTION_KEY` encrypts Salesforce refresh tokens at rest in Redis. Required unless you set `SFDC_IDENTITY=service` — see below.
 
 ---
 
@@ -73,11 +73,11 @@ Ad spend is separate and stricter. `GROWTH_MARKETING_APPROVERS` controls who can
 
 ---
 
-## 4. (Optional) Per-user Salesforce OAuth
+## 4. Salesforce write identity (on by default)
 
 By default, all Salesforce writes go through a single service account — so `CreatedById` shows that service account, not the actual person who clicked the Slack button. If you'd rather each user's writes show their own SFDC identity:
 
-1. Set `SFDC_USER_OAUTH_ENABLED=true`.
+1. Leave `SFDC_IDENTITY=user` (the default).
 2. Set `MOPERATOR_TOKEN_ENCRYPTION_KEY` (you generated this in step 1).
 3. In your Salesforce Connected App, add a second redirect URI: `https://YOUR-DOMAIN/api/integrations/salesforce/user-callback`.
 4. Tell your team to run `/moperator connect-sfdc` in Slack. Each user gets a one-time consent link.
@@ -158,7 +158,7 @@ For `npm run dev` on `http://localhost:3000`:
 | `MOPERATOR_BULK_APPROVAL_THRESHOLD` | no | Above this, a bulk write needs approval even from an approver. Defaults to 100 |
 | `MOPERATOR_ALLOWED_SLACK_CHANNELS` | Slack Connect | Restrict the agent to specific channels. Set this if the app is in a channel with people outside your org |
 | `MOPERATOR_TOKEN_ENCRYPTION_KEY` | per-user SFDC OAuth | AES-256-GCM key for refresh tokens in Redis |
-| `SFDC_USER_OAUTH_ENABLED` | per-user SFDC OAuth | Master flag, defaults `false` |
+| `SFDC_IDENTITY` | Salesforce writes | `user` (default), `user-all`, or `service`. Decides whether Salesforce records a person or the bot. |
 
 ---
 

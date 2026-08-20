@@ -27,7 +27,8 @@ export interface SfdcCredentials {
 export interface SfdcRequestOptions {
   /**
    * Use these credentials instead of the service account. Supplied by the tool
-   * layer from eve's per-user authorization when SFDC_USER_OAUTH_ENABLED=true.
+   * layer from `resolveSfdcWrite` / `resolveSfdcRead`, so a change is recorded
+   * under the person who asked for it.
    */
   credentials?: SfdcCredentials | null
 }
