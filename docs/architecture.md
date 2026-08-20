@@ -1,473 +1,194 @@
-# mOperator Architecture
+# Architecture
 
-This document explains how mOperator works under the hood. It's useful for understanding the system and troubleshooting issues.
-
-## System Overview
+mOperator is an [eve](https://eve.dev) agent mounted into a Next.js app. One
+repository, one Vercel project, two things running in it: the web app and the
+agent runtime.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Slack Workspace                          │
-│  User: @mOperator show me active campaigns                  │
-│  User: /moperator bug Dashboard is slow                     │
-└─────────────────┬───────────────────────────────────────────┘
-                  │
-                  v
-┌─────────────────────────────────────────────────────────────┐
-│                   mOperator Backend                         │
-│  POST /api/slack          (for @mentions, DMs)              │
-│  POST /api/slack/commands (for /slash commands)             │
-│  POST /api/agent          (for CLI)                         │
-└────────────────┬──────────────────────────────────────────┬─┘
-                 │                                          │
-                 v                                          v
-            ┌────────────────────┐              ┌─────────────────┐
-            │   Slack Handling   │              │  Integrations   │
-            │  - Parse message   │              │  (Auto-Discovery)
-            │  - Get context     │              │  - Salesforce   │
-            │  - Thread history  │              │  - Linear       │
-            │  - CSV export      │              │  - GitHub       │
-            └────────┬───────────┘              │  - Custom       │
-                     │                          └────────┬────────┘
-                     v                                   │
-            ┌────────────────────────────────────────────v──────┐
-            │      AI Model (Claude / GPT-4o)                   │
-            │  - Reads system prompt                            │
-            │  - Has access to integration tools                │
-            │  - Decides which tool to call                     │
-            │  - Handles follow-up conversations                │
-            └────────────────────────────────────────────────────┘
+Slack (@mOperator)          Browser (/chat)         Cron (schedules)
+        │                          │                       │
+        ▼                          ▼                       ▼
+ /eve/v1/slack            /eve/v1/session          agent/schedules/*
+        │                          │                       │
+        └──────────────┬───────────┴───────────────────────┘
+                       ▼
+                 the agent runtime
+                       │
+   ┌───────────────────┼───────────────────┬──────────────────┐
+   ▼                   ▼                   ▼                  ▼
+tools/              skills/            subagents/         sandbox
+(env-gated)      (load on demand)   (data-analyst)    (/workspace + pandas)
+   │
+   ▼
+lib/<service>/client.ts → Salesforce, HubSpot, Marketo, Google Ads, Linear, GitHub, Luma
 ```
 
-## Request Flow
+The Next.js app serves the marketing site, the docs, `/chat`, `/console`,
+`/analytics`, and `/audience-vocab`. `withEve()` in `next.config.ts` mounts the
+agent's routes on the same origin, which is why the browser chat needs no CORS
+config and no agent URL.
 
-### 1. Slack Receives the Message
+---
 
-User: `@mOperator show me active campaigns`
+## The filesystem is the configuration
 
-Slack sends `POST /api/slack` with:
-```json
-{
-  "type": "event_callback",
-  "event": {
-    "type": "app_mention",
-    "text": "<@U12345> show me active campaigns",
-    "user": "U99999",
-    "channel": "C12345",
-    "thread_ts": "1234567890.123456"
+There is no registry, no plugin manifest, no wiring file. eve walks `agent/` and
+the directory a file sits in determines what it is.
+
+| Path | What it becomes |
+| --- | --- |
+| `agent/agent.ts` | Model, reasoning effort, compaction, session limits |
+| `agent/instructions/` | The system prompt. `.md` is static, `.ts` resolves per session |
+| `agent/tools/<name>.ts` | Tools. Filename is the name the model sees |
+| `agent/skills/<name>.md` | Playbooks loaded on demand |
+| `agent/channels/<name>.ts` | Entry points — Slack, HTTP |
+| `agent/subagents/<name>/` | A specialist with its own tools and prompt |
+| `agent/schedules/<name>.ts` | Cron jobs. Become Vercel Cron on deploy |
+| `agent/hooks/<name>.ts` | Lifecycle observers |
+| `agent/sandbox/sandbox.ts` | The workspace and what is installed in it |
+| `agent/lib/` | Shared code. Import-only, never mounted anywhere |
+| `evals/` | Scored checks, run with `npm run eval` |
+
+`npm run agent:info` prints what was actually discovered. It is the fastest way to
+find out why a file is not taking effect.
+
+## Turns, steps, and durability
+
+A **turn** is one inbound message and everything the agent does in response. It
+runs as a sequence of durable steps on Vercel Workflow: each completed step is
+journaled, so a crash, a redeploy, or a days-long pause resumes from the last
+committed step rather than starting over.
+
+This is the property everything else in the design leans on:
+
+- An approval can wait indefinitely. Nothing is held in memory, so a deploy
+  mid-approval is a non-event.
+- A step that completed never re-runs — the recorded result is replayed. A step
+  interrupted mid-execution does re-run, which is why anything non-idempotent
+  (a send, a delete) sits behind an approval.
+- A Salesforce sign-in can happen inline: the turn parks on the challenge and
+  picks back up after the callback.
+
+## How tools appear
+
+Two shapes in `agent/tools/`, for two different jobs.
+
+**Static** — one file, one tool, always available. `build_tracking_url`,
+`parse_tracking_url`, `check_campaign_name`, plus the framework's `glob`, `grep`,
+and `sleep`. No credentials, so no reason to hide them.
+
+**Dynamic** — one file per integration, resolved at session start:
+
+```ts
+export default defineDynamic({
+  events: {
+    "session.started": () => {
+      if (!isConfigured("salesforce")) return null
+      return { query_salesforce: defineTool({ ... }), /* ... */ }
+    },
+  },
+})
+```
+
+That `return null` is the whole reason this repo can ship seven integrations
+without confusing the model. An install with no Marketo has no Marketo tools, so
+the agent cannot offer a Marketo operation and then fail. The same
+`isConfigured()` call drives the system prompt through
+`agent/instructions/20-capabilities.ts`, so tools and prompt cannot drift.
+
+## Where the safety lives
+
+Three layers, each doing something the others cannot.
+
+**1. Approval policies** — `agent/lib/approval.ts`. Pure functions that read the
+caller's identity and the tool's input and return whether a human is needed. No
+network calls, because identity was resolved once at the channel boundary.
+
+```ts
+export function writeApproval(): Approval {
+  return (ctx) => {
+    if (isAppPrincipal(ctx)) return "not-applicable"   // scheduled run
+    return isWriteApprover(callerEmail(ctx)) ? "not-applicable" : "user-approval"
   }
 }
 ```
 
-### 2. Extract Message and Context
-
-`src/app/api/slack/route.ts`:
-- Removes bot mention from text → `"show me active campaigns"`
-- Extracts channel and thread
-- Checks if CSV export is needed
-- Checks if it's a Linear issue shortcut (`bug:`, `feature:`)
-- Loads thread history for conversation context
+`bulkApproval` additionally denies outright above a hard cap, and the denial
+carries a reason the model reads — so it says "that would touch 40,000 records,
+narrow the filter" rather than silently retrying.
 
-### 3. Build Conversation History
+**2. Who may answer** — `onInputResponse` in `agent/channels/slack.ts`. The
+policies decide *whether* a human is needed; this decides *which* humans count.
+Without it, anyone who can see a thread could approve their own write.
 
-If in a thread:
-```typescript
-[
-  { role: "user", content: "show me campaigns from last month" },
-  { role: "assistant", content: "I found 3 campaigns..." },
-  { role: "user", content: "filter to just active ones" },
-]
-```
+**3. Point-of-effect checks** — for ad spend. `spendApproval()` guarantees a human
+approved. Returning the responder's auth from `onInputResponse` makes them the
+resumed turn's current caller, and `requireSpendApprover(ctx)` at the top of each
+spend tool's `execute` verifies that person is on the spend list. So the requester
+cannot approve their own budget increase unless they are also a spend approver.
 
-Key rule: **Consecutive messages from the same role must be merged**. This is an Anthropic API requirement.
+Plus two structural boundaries that are not policies at all:
 
-### 4. Call AI Model with Tools
+- `validateReadOnlySoql` rejects DML, statement stacking, and comment-hidden
+  mutations before a query is sent.
+- The `data-analyst` subagent has no write tools in its directory. Subagents
+  inherit nothing from the root, so there is no mutation surface to reach.
 
-`src/app/api/agent/route.ts` and `src/lib/ai.ts`:
+## Identity
 
-```typescript
-await generateText({
-  model: getAIModel(),          // Claude or GPT-4o
-  system: SLACK_SYSTEM_PROMPT,  // Instructions + active integrations
-  tools: getAllTools(),         // Salesforce, Linear, GitHub tools
-  messages: [                   // User message + history
-    { role: "user", content: "show me active campaigns" }
-  ],
-  onStepFinish: (step) => {
-    // Capture query results for CSV export
-  }
-})
-```
-
-### 5. AI Decides Which Tool to Use
-
-The system prompt says:
-> "You have access to Salesforce, Linear, and GitHub integrations. Use the appropriate tool to answer the question."
+One email, resolved once, used everywhere.
 
-The AI looks at the tools available:
+Slack: `authWithEmail` in the channel looks up the sender's email and stamps it
+onto the session auth. Browser: `agent/channels/eve.ts` verifies the signed admin
+cookie — the same cookie that gates `/console` — and stamps the same attribute.
+Schedules run as an app principal with no email, which is what makes deletions and
+sends refuse to fire unattended.
 
-**Active tools** (if `SALESFORCE_ACCESS_TOKEN` is set):
-- `querySalesforce` — Run SOQL queries
-- `manageSalesforceRecords` — Create/update/delete
+Every downstream check reads that attribute. That is why the approval policies are
+pure, and why the browser chat and Slack enforce identical rules without
+duplicating logic.
 
-**Active tools** (if `LINEAR_API_KEY` is set):
-- `fileLinearIssue` — Create bug or feature request
-- `queryLinearIssues` — Search issues
+## Context management
 
-**Active tools** (if `GITHUB_TOKEN` is set):
-- `getRepoCommits` — Fetch commits and releases
+The agent has to answer questions about data that does not fit in a context
+window. Three mechanisms, in order of how much they help:
 
-The AI calls the appropriate tool with parameters.
+**The sandbox.** `export_salesforce_query` paginates the full result set, writes
+it to `/workspace` as CSV, and returns a path plus a row count. The model then
+runs pandas over the file. A 200,000-row answer costs a summary, not 200,000 rows.
+Files people attach in Slack land in `/workspace/attachments`, so the same applies
+to inbound data.
 
-### 6. Tool Execution
-
-Example: User asks "show me active campaigns"
+**Skills.** Seven playbooks in `agent/skills/`, advertised by description and
+loaded only when a request matches. The base prompt stays small; the SOQL trap
+list only enters context when someone is writing SOQL.
 
-1. AI calls `querySalesforce` with:
-   ```json
-   {
-     "soql": "SELECT Name, Status, CreatedDate FROM Campaign WHERE Status='Active'"
-   }
-   ```
+**Subagents.** The `data-analyst` investigates in its own context and returns a
+written finding. The parent never sees the intermediate queries.
 
-2. Salesforce tool (`src/lib/integrations/salesforce/tools.ts`):
-   - Validates the SOQL query
-   - Calls Salesforce API
-   - Returns results:
-   ```json
-   {
-     "success": true,
-     "records": [
-       { "Name": "Holiday Sale 2024", "Status": "Active", ... },
-       { "Name": "New Year Campaign", "Status": "Active", ... }
-     ]
-   }
-   ```
+Compaction is on at 80% of the window, and per-session token limits pause and ask
+rather than failing.
 
-3. Results are captured in `onStepFinish()` for potential CSV export
+## What the framework replaced
 
-### 7. AI Generates Response
+For context on how much of this repo used to be transport plumbing:
 
-The AI reads the tool results and generates a human-readable response:
+| Was | Now |
+| --- | --- |
+| 638-line Slack events route, 351-line interactions route, HMAC verification, thinking-message lifecycle, thread history, markdown→mrkdwn, Block Kit cards, CSV upload | `agent/channels/slack.ts` |
+| 200-line tool-wrapping block, Redis approval store, 30-minute TTL, `pending_approval` sentinel threaded through the model | declarative policies + durable HITL park |
+| Provider branching in `src/lib/ai.ts` | one AI Gateway model id |
+| Integration registry, tool assembly, prompt concatenation | filesystem discovery + dynamic instructions |
+| PKCE helpers, OAuth state store, three callback routes | `defineInteractiveAuthorization` |
+| Luma pending-event store and confirmation-card builder | the approval prompt is the confirmation |
+| `cli.ts` and `POST /api/agent` | `npm run agent` and `/chat` |
 
-```
-I found 2 active campaigns:
+The API clients under `agent/lib/<service>/` are the same code as before. That was
+always the part worth keeping.
 
-1. **Holiday Sale 2024** — Created Dec 1
-2. **New Year Campaign** — Created Dec 27
+## Further reading
 
-Would you like details on any of these?
-```
-
-### 8. Send Message Back to Slack
-
-`src/lib/slack.ts` — `sendSlackMessage()`:
-- Converts markdown to Slack format
-- Sends response to the original channel/thread
-- Posts a "thinking" message first (optional, for UX)
-
-### 9. CSV Export (Optional)
-
-If the user asked for CSV or used words like "export":
-
-```typescript
-if (wantsCSV(text) && result.records) {
-  const csv = recordsToCSV(result.records)
-  uploadSlackFile(channel, csv, 'export.csv')
-}
-```
-
-`recordsToCSV()` converts array of records to CSV format and uploads via Slack API.
-
-### 10. Respond with Delayed Response (Slash Commands)
-
-For `/moperator bug`, the flow is different:
-
-```typescript
-// Immediate response (must be within 3 seconds)
-return { response_type: "ephemeral", text: "Filing bug..." }
-
-// Delayed response (posted minutes later via responseUrl)
-waitUntil(async () => {
-  const result = await fileIssueFromMessage(text, 'bug')
-  await fetch(responseUrl, {
-    method: "POST",
-    body: JSON.stringify({
-      response_type: "in_channel",
-      text: `*Bug filed:* <${result.url}|${result.identifier}>`
-    })
-  })
-})
-```
-
-This pattern uses Vercel's `waitUntil()` for background work.
-
-## Integration Module System
-
-Each integration is a self-contained module that mOperator discovers and loads dynamically.
-
-### Integration Interface
-
-`src/lib/integrations/types.ts`:
-
-```typescript
-export interface Integration {
-  name: string                         // "Salesforce", "Linear"
-  description: string                  // "CRM and data queries"
-  capabilities: string[]               // What the AI can do
-  examples: string[]                   // Sample prompts
-  isConfigured: () => boolean          // Check env vars
-  getTools: () => Record<string, Tool> // AI SDK tools
-}
-```
-
-### Auto-Discovery
-
-`src/lib/integrations/index.ts`:
-
-```typescript
-const ALL_INTEGRATIONS: Integration[] = [
-  salesforceIntegration,  // Added manually in code
-  linearIntegration,
-  githubIntegration,
-]
-
-export function getActiveIntegrations(): Integration[] {
-  return ALL_INTEGRATIONS.filter(i => i.isConfigured())
-}
-```
-
-Only integrations with required env vars appear in the system prompt.
-
-### Integration Lifecycle
-
-1. **Load time:** Check all integrations' `isConfigured()`
-2. **Tool registration:** Call `getTools()` on active integrations
-3. **System prompt:** List capabilities of active integrations
-4. **Runtime:** AI sees tools and calls them as needed
-
-If you don't have `SALESFORCE_ACCESS_TOKEN` set, Salesforce tools never appear.
-
-## Thread Context Handling
-
-When a user replies in a thread, mOperator loads the conversation history:
-
-`src/lib/slack.ts` — `getThreadHistory()`:
-
-1. Fetch all messages in thread since a cutoff (last 50 messages)
-2. For each message, identify the role (user or bot)
-3. **Merge consecutive same-role messages** (Anthropic API requirement)
-4. Return array of `{ role, content }` pairs
-
-Example:
-
-**Raw messages:**
-```
-[User] hi
-[User] what's the status
-[Bot] I'll check for you
-[Bot] Here's the status...
-[User] export this as csv
-```
-
-**After merging:**
-```typescript
-[
-  { role: "user", content: "hi\n\nwhat's the status" },
-  { role: "assistant", content: "I'll check for you\n\nHere's the status..." },
-  { role: "user", content: "export this as csv" },
-]
-```
-
-This ensures the AI model (which requires alternating roles) can read the full conversation.
-
-## System Prompt
-
-`src/lib/agent-config.ts`:
-
-The system prompt is assembled dynamically:
-
-```
-You are mOperator, a Slack bot that helps marketing and sales teams...
-
-[List of active integrations and their capabilities]
-
-Salesforce (CRM queries):
-- Query Salesforce with natural language
-- Example: "show me active campaigns"
-
-Linear (Issue tracking):
-- File bugs and features
-- Example: "bug: dashboard is slow"
-
-[Instructions on CSV export, threading, etc.]
-```
-
-The key insight: **The system prompt changes based on what's configured**.
-
-If GitHub isn't configured, the system prompt doesn't mention commit queries. The AI won't try to use tools that don't exist.
-
-## CSV Export Mechanism
-
-When a user asks for CSV or uses keywords like "export":
-
-1. **Tool execution captures results:**
-   ```typescript
-   onStepFinish({ toolResults }) {
-     for (const result of toolResults) {
-       if (result.toolName === "querySalesforce") {
-         ctx.queryResults = result.output.records
-       }
-     }
-   }
-   ```
-
-2. **Convert to CSV:**
-   ```typescript
-   const csv = recordsToCSV(records)
-   // Name,Status,CreatedDate
-   // Campaign A,Active,2024-01-01
-   // Campaign B,Active,2024-01-15
-   ```
-
-3. **Upload to Slack:**
-   ```typescript
-   await uploadSlackFile(channel, csv, 'export.csv', title, threadTs)
-   ```
-
-4. **Slack stores and displays** the file in the thread
-
-CSV is capped at 10,000 rows to avoid performance issues.
-
-## Slash Command Flow
-
-Slash commands have a unique flow because they must respond within 3 seconds:
-
-1. **User types:** `/moperator bug Dashboard spinner never stops`
-2. **Slack sends:** `POST /api/slack/commands` with `command`, `text`, `user_id`, `response_url`
-3. **Handler runs:**
-   ```typescript
-   async handler(ctx: CommandContext) {
-     // Immediate response (required within 3 seconds)
-     return {
-       response_type: "ephemeral",
-       text: "Filing bug report..."
-     }
-
-     // Background work (sent later via responseUrl)
-     waitUntil(async () => {
-       const result = await fileIssueFromMessage(text, 'bug')
-       await fetch(responseUrl, {
-         method: "POST",
-         body: JSON.stringify({
-           response_type: "in_channel",
-           text: `*Bug filed:* <${result.url}|${result.identifier}>`
-         })
-       })
-     })
-   }
-   ```
-
-4. **Slack shows** ephemeral message immediately
-5. **Handler processes** in background (up to 5 minutes on Vercel)
-6. **Final message posted** via `responseUrl` after processing completes
-
-This pattern is used for `/moperator bug` and `/moperator feature`.
-
-## Error Handling
-
-All tools return a structured format:
-
-```typescript
-{
-  success: true | false,
-  data?: any,
-  error?: string,
-  message?: string,
-}
-```
-
-If a tool fails:
-
-1. Return `{ success: false, error: "specific message" }`
-2. AI reads the error and explains to user
-3. **Never hallucinate data** — the system prompt forbids it
-4. Log errors to console for debugging
-
-Example:
-
-**User:** "Show me contacts"
-**Tool fails:** `{ success: false, error: "Query syntax error: invalid field" }`
-**AI response:** "I tried to query contacts but got an error: invalid field. Try asking for just 'contacts' without specifying fields."
-
-## Data Flow Diagram
-
-```
-Message arrives
-    ↓
-Parse (remove @mention, check for CSV keyword)
-    ↓
-Get thread history
-    ↓
-Call generateText() with tools
-    ↓
-AI decides which tool(s) to call
-    ↓
-Tool runs (Salesforce query, file Linear issue, etc.)
-    ↓
-AI reads results
-    ↓
-AI generates response
-    ↓
-Send Slack message
-    ↓
-If CSV: upload file
-```
-
-## Performance Considerations
-
-1. **Tool caching:** Don't cache Salesforce queries (data changes)
-2. **Timeout:** Stop after 10 tool calls to avoid long waits
-3. **CSV limit:** 10,000 rows max to avoid memory issues
-4. **Redis (optional):** Cache slash command state for reliability
-
-## Deployment
-
-1. **Local:** `npm run dev` starts Next.js dev server
-2. **Vercel:** Deployed as serverless functions
-   - `POST /api/slack` → Slack event handler
-   - `POST /api/slack/commands` → Slash command handler
-   - `POST /api/agent` → CLI endpoint
-
-Each request is stateless; all state comes from Slack thread history or Redis.
-
-## Key Files
-
-- `src/app/api/slack/route.ts` — Main Slack event handler
-- `src/app/api/slack/commands/route.ts` — Slash command handler
-- `src/lib/ai.ts` — AI model configuration
-- `src/lib/tools.ts` — Tool assembly
-- `src/lib/slack.ts` — Slack API utilities
-- `src/lib/integrations/` — Integration modules
-- `src/lib/agent-config.ts` — System prompt
-
-## Troubleshooting
-
-### Bot doesn't respond
-1. Check Slack event subscription URL is correct
-2. Check `SLACK_BOT_TOKEN` is set
-3. Check app logs in Vercel: `vercel logs`
-
-### Tool says "not available"
-1. Check env var is set (e.g., `SALESFORCE_ACCESS_TOKEN`)
-2. Restart the app (`npm run dev` or redeploy to Vercel)
-3. Verify in system prompt that tool is listed
-
-### CSV export doesn't work
-1. User must include keyword: "csv", "export", "download", "spreadsheet"
-2. Query must return results (some integrations don't support CSV)
-3. Check Slack token has `files:write` scope
-
-### Thread history not working
-1. Set `SLACK_BOT_USER_ID` in env vars
-2. Without it, thread history is limited
-3. Verify bot joined the channel/thread
+- [Fork this](fork-this.md) — making it yours
+- [Adding integrations](adding-integrations.md)
+- [Security](security.md)
+- [eve docs](https://eve.dev/docs) — execution model, channels, tools, evals

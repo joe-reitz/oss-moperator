@@ -1,212 +1,166 @@
-# Agents Guide for mOperator
+# Working on mOperator
 
-This document provides context for developers and AI assistants working on this codebase.
+Context for developers and AI assistants changing this codebase.
 
-## Project Vision
+## What this is
 
-mOperator is an **open-source orchestration layer for Marketing Operations**. It's a platform that connects marketing tools through a unified natural language interface (Slack), not a collection of point solutions.
+mOperator is a marketing operations agent built on [eve](https://eve.dev),
+Vercel's framework for durable backend agents. It runs in Slack and in a browser,
+works against a company's own CRM and ad accounts, and is designed to be **forked
+and customized** rather than configured.
 
-The core thesis: **One interface, many capabilities, composable workflows.**
+That last point drives most of the design decisions here. When choosing between
+two implementations, prefer the one a stranger can find and change.
 
-## Architecture Principles
-
-### 1. Tool-Based Agent Architecture
-
-mOperator uses an AI model (Claude or GPT-4o) as the reasoning engine. The model doesn't execute actions directly — it decides which **tools** to call based on user intent.
-
-```
-User Message → AI Model → Tool Selection → Tool Execution → AI Model → Response
-                  ↑                            │
-                  └────────────────────────────┘
-                       (loop until complete)
-```
-
-This loop continues until the model has enough information to respond (max 10 iterations).
-
-### 2. Integration Modules
-
-Each integration is a self-contained module in `src/lib/integrations/<name>/`:
+**Read the framework docs before writing agent code.** They ship with the
+installed version and match it exactly:
 
 ```
-src/lib/integrations/salesforce/
-├── client.ts    # API client (auth, HTTP requests)
-├── tools.ts     # AI SDK tool definitions
-└── index.ts     # Integration manifest (name, capabilities, isConfigured)
+node_modules/eve/docs/README.md
 ```
 
-Integrations are auto-discovered: if the required env vars are set, the integration loads. If not, it's invisible to the AI.
+Do not infer eve's API from memory or from this file. Check the bundled docs.
 
-### 3. Tools as AI SDK Functions
-
-Every tool uses the Vercel AI SDK `tool()` format:
-
-```typescript
-import { tool } from 'ai'
-import { z } from 'zod'
-
-export const myTools = {
-  doSomething: tool({
-    description: 'What this tool does',
-    inputSchema: z.object({
-      param: z.string().describe('What this param means'),
-    }),
-    execute: async ({ param }) => {
-      try {
-        const result = await client.doSomething(param)
-        return { success: true as const, data: result }
-      } catch (error) {
-        return {
-          success: false as const,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        }
-      }
-    },
-  }),
-}
-```
-
-Tools:
-- Use Zod schemas for input validation (`inputSchema`, NOT `parameters`)
-- Return `{ success: true/false, ... }` objects
-- Handle their own errors (never throw)
-- Are stateless — no side effects beyond their stated purpose
-
-### 4. Multi-Interface Support
-
-The same tools are used across interfaces:
-- **CLI** (`cli.ts`) — local development and testing
-- **Slack** (`/api/slack/route.ts`) — production interface
-- **Web** (`/api/agent/route.ts`) — API endpoint
-
-Each interface may have different:
-- System prompts (Slack mentions formatting, CLI is concise)
-- Response handling (Slack uploads files, CLI streams text)
-- Permission checks (Slack looks up user identity)
-
-## Code Organization
+## Layout
 
 ```
-src/
-├── app/
-│   ├── page.tsx                # Landing page
-│   ├── layout.tsx              # Root layout
-│   ├── globals.css             # Global styles
-│   ├── docs/[slug]/page.tsx    # Documentation pages
-│   └── api/
-│       ├── agent/route.ts      # CLI/API endpoint
-│       ├── slack/route.ts      # Slack event handler
-│       └── integrations/       # OAuth callbacks
-├── lib/
-│   ├── ai.ts                   # AI model configuration
-│   ├── agent-config.ts         # System prompt assembly
-│   ├── tools.ts                # Tool registry
-│   ├── slack.ts                # Slack API utilities
-│   └── integrations/
-│       ├── index.ts            # Integration loader
-│       ├── types.ts            # Integration interface
-│       ├── salesforce/         # Salesforce module
-│       ├── linear/             # Linear module
-│       └── github/             # GitHub module
-cli.ts                          # CLI interface
-AGENTS.md                       # This file
+agent/                    the agent — this is the product
+├── agent.ts              model, reasoning, compaction, session limits
+├── instructions/         system prompt (.md static, .ts per-session)
+├── tools/                one file per integration, plus always-on tools
+├── skills/               on-demand playbooks
+├── channels/             slack.ts, eve.ts
+├── subagents/            data-analyst (read-only)
+├── schedules/            cron jobs -> Vercel Cron on deploy
+├── hooks/                lifecycle observers
+├── sandbox/              /workspace and its data tooling
+└── lib/                  clients, config, approval policies, shared helpers
+
+evals/                    scored checks (npm run eval)
+src/app/                  Next.js: site, /chat, /console, /analytics, /audience-vocab
+docs/                     also served at /docs/<slug>
 ```
 
-## Adding New Integrations
+`agent/lib/` is import-only. The Next.js app imports from it via the `@agent/*`
+alias — that is deliberate, so the SOQL console and the agent share one Salesforce
+client and one SOQL validator rather than drifting.
 
-See [docs/adding-integrations.md](docs/adding-integrations.md) for a complete step-by-step guide.
+## The loop
 
-The short version:
-
-1. Create `src/lib/integrations/<name>/client.ts` — API client
-2. Create `src/lib/integrations/<name>/tools.ts` — AI SDK tools
-3. Create `src/lib/integrations/<name>/index.ts` — Integration manifest
-4. Register in `src/lib/integrations/index.ts`
-5. Add env vars to `.env.local`
-
-## Key Patterns
-
-### Error Handling
-
-Tools should never throw. Always return structured results:
-
-```typescript
-try {
-  const data = await client.fetchData(input)
-  return { success: true as const, data }
-} catch (error) {
-  return {
-    success: false as const,
-    error: error instanceof Error ? error.message : 'Unknown error',
-  }
-}
+```bash
+npm run agent         # terminal chat, hot reload
+npm run agent:info    # what did eve discover? run this first when confused
+npm run dev           # full app (boots the agent too, via withEve)
+npm run typecheck
+npm run eval
 ```
 
-### Permission Checks
+`npm run agent:info` reports discovery errors with file paths. Reach for it before
+reading logs.
 
-Destructive operations (delete, bulk update) check `ADMIN_SLACK_USER_IDS`:
+## Conventions
 
-```typescript
-if (action === 'delete' && !isAdmin) {
-  return { success: false, error: 'Permission denied' }
-}
-```
+**Tools are snake_case**, matching the built-ins: `query_salesforce`,
+`build_tracking_url`. Parameters too: `object_name`, not `objectName`.
 
-### Slack Formatting
+**Tools never throw.** Return `{ success: false, error }` and include the API's
+own message. A thrown error is a failed call the model cannot explain; a returned
+one is something it can report or route around.
 
-Claude's output goes to Slack, which uses mrkdwn (not markdown):
-- Bold: `*text*` (not `**text**`)
-- No headers (use bold on its own line)
-- Code blocks work normally
+**Two tool shapes, for two jobs:**
 
-The `markdownToSlack()` function in `src/lib/slack.ts` handles conversion.
+- *Static* — one file, one default-exported `defineTool`. For always-available
+  tools with no credentials.
+- *Dynamic* — `defineDynamic` returning a map, gated on `isConfigured(id)`. For
+  integrations. Returning `null` when unconfigured is what keeps the model from
+  promising work this install cannot do.
 
-### CSV Export
+**In dynamic files, `execute` must be written inline.** `execute: someFunction`
+works on the first step and then breaks when the runtime replays it. This is a
+real constraint of the closure-reconstruction transform, not a style preference.
 
-The pattern for CSV export:
-1. Tool stores results in `ctx.queryResults`
-2. After processing, check if user wanted CSV (`wantsCSV()`)
-3. If yes, convert to CSV and upload via Slack API
+**Descriptions are written for the model.** Say when to use the tool, what to call
+first, and what the common mistake is. `query_salesforce` tells the model to
+describe the object first because a guessed field name is the top cause of
+failure. That sentence prevents more errors than any code in the file.
 
-### Dynamic System Prompt
+**Return paths, not payloads.** Anything that can produce many rows writes to
+`/workspace` via `writeCsvToWorkspace` and returns a path. The Slack channel
+attaches the file; the model reasons about a summary.
 
-The system prompt is assembled at request time based on which integrations are configured. If GitHub isn't configured, the prompt doesn't mention commits. The AI won't try to use tools that don't exist.
+**Never add a write tool without an approval policy.** The policies are in
+`agent/lib/approval.ts`:
 
-## Environment Variables
+| Policy | For |
+| --- | --- |
+| none | reads only |
+| `writeApproval()` | single-record writes |
+| `bulkApproval(countFn)` | anything touching a list |
+| `deleteApproval()` | deletions — never from a schedule |
+| `externalSendApproval()` | anything reaching real people |
+| `spendApproval()` + `requireSpendApprover(ctx)` | anything moving money — both halves |
 
-Required:
-- `AI_GATEWAY_API_KEY` — Vercel AI Gateway key
-- `AI_PROVIDER` — `anthropic` or `openai`
-- `SLACK_BOT_TOKEN` — Slack bot token
-- `SLACK_BOT_USER_ID` — Bot's user ID (for filtering its own messages)
+Omitting `approval` means the tool runs unattended.
 
-Optional:
-- `AI_GATEWAY_URL` — Override AI gateway (default: ai-gateway.vercel.sh)
-- `AI_MODEL` — Override model (default: claude-sonnet-4-5-20250929)
-- `SALESFORCE_*` — Salesforce OAuth credentials
-- `LINEAR_API_KEY` — Linear API key
-- `LINEAR_TEAM_NAME` — Linear team identifier
-- `GITHUB_TOKEN` — GitHub personal access token
-- `GITHUB_REPO` — GitHub repo in `owner/repo` format
-- `ADMIN_SLACK_USER_IDS` — Comma-separated Slack user IDs with admin access
+## Things that are easy to get wrong
 
-## Future Considerations
+**Approvals are durable pauses, not records.** Do not add a store, a TTL, or a
+reminder job. The turn suspends and resumes; that is the whole mechanism.
 
-### Workflow Engine
-Multi-step processes that span systems and need human approval: workflow definitions, state persistence, approval handling in Slack.
+**Do not tell the model a write is "pending approval".** The old code returned a
+`pending_approval` sentinel and the agent ended the conversation mid-task. The
+turn now genuinely pauses and then completes.
 
-### Observability
-Structured logging for all tool calls, duration tracking, error rates by tool, usage patterns.
+**Slack takes markdown.** The channel converts to mrkdwn. Do not reintroduce
+`markdownToSlack` or instructions about `*bold*` — write normal markdown, tables
+and headings included.
 
-### More Integrations
-HubSpot, Marketo, Google Analytics, Mixpanel, Notion — the integration system is designed to make adding these straightforward.
+**Do not hand-write the integration list into the prompt.**
+`agent/instructions/20-capabilities.ts` renders the live set from
+`agent/lib/integrations.ts`. Adding an integration in one place updates the prompt.
 
-## Philosophy
+**Subagents inherit nothing.** A subagent gets only what its own directory
+declares — that is what makes `data-analyst` genuinely read-only, and why it
+declares its own sandbox. Adding a tool to `agent/tools/` does not give it to a
+subagent, which is usually what you want.
 
-When making changes, consider:
+**Identity is resolved once, at the channel.** `authWithEmail` in the Slack
+channel and the auth walk in `agent/channels/eve.ts` stamp the caller's email onto
+the session. Everything downstream reads that attribute, so approval policies stay
+pure and make no network calls. Do not look up identity inside a tool.
 
-1. **Composability over features** — Will this work well with other tools?
-2. **Simplicity over cleverness** — Can someone understand this in 30 seconds?
-3. **Platform over point solution** — Does this strengthen the whole system?
-4. **User intent over literal requests** — What is the user actually trying to accomplish?
+**A new channel does not inherit approver gating.** If you add Teams or Discord,
+copy `onInputResponse` from `agent/channels/slack.ts`. Without it, anyone who can
+see an approval prompt on that platform can answer it.
 
-The goal is a system where adding new capabilities is easy and the whole becomes greater than the sum of its parts.
+**Connection tools are not covered by this repo's policies.** Policies apply to
+`agent/tools/`. A connection brings in tools we did not author — gate the whole
+connection with `once()` or `always()`.
+
+## Where to make a change
+
+| Change | File |
+| --- | --- |
+| Approver lists, limits, naming and UTM conventions | `agent/lib/config.ts` |
+| How the agent talks or what it refuses | `agent/instructions/` |
+| A procedure the agent should follow | `agent/skills/` |
+| A new integration | `agent/lib/<name>/client.ts` + `agent/tools/<name>.ts` + a registry entry |
+| Which writes need a human | `agent/lib/approval.ts` |
+| Who may talk to it or approve | `agent/channels/` |
+| Model, reasoning, compaction, limits | `agent/agent.ts` |
+| What is installed in the sandbox | `agent/sandbox/sandbox.ts` |
+
+## Design principles
+
+**Composability over features.** A new tool should combine with the existing ones.
+`build_tracking_url` is useful because the campaign-launch skill can call it after
+creating a Salesforce campaign.
+
+**Make the safe path the easy path.** The reason bulk limits live in an approval
+policy rather than a prompt instruction is that a policy cannot be argued with.
+
+**A fork should be legible.** Someone cloning this needs to find where a behavior
+comes from in under a minute. That is worth more than clever indirection.
+
+**Prefer deleting to configuring.** If a feature needs a flag to turn off, ask
+whether it should be a file someone deletes instead.

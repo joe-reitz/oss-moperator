@@ -7,9 +7,9 @@
 
 import { NextRequest } from "next/server"
 import { AdminAuthError, requireAdmin } from "@/lib/admin-auth"
-import { queryAllRecords } from "@/lib/integrations/salesforce/client"
-import { recordsToCSV } from "@/lib/slack"
-import { validateReadOnlySoql } from "@/lib/soql-validator"
+import { queryAllRecords } from "@agent/lib/salesforce/client"
+import { recordsToCsv } from "@agent/lib/csv"
+import { validateReadOnlySoql } from "@agent/lib/soql"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       if ("attributes" in row) delete (row as Record<string, unknown>).attributes
     }
 
-    const csv = recordsToCSV(records)
+    const csv = recordsToCsv(records)
     const date = new Date().toISOString().split("T")[0]
     const filename = `soql-export-${date}.csv`
 

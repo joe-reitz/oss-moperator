@@ -20,7 +20,7 @@ AI Gateway is a proxy that routes your AI requests to any supported model provid
 
 ### Why AI Gateway?
 
-- **Model flexibility** — Switch from Claude to GPT-4o (or the next big model) by changing `AI_PROVIDER` in your env vars. No code changes.
+- **Model flexibility** — Switch models by changing one string — `AI_MODEL`, or `npx eve set --model <id>`. No code changes, no second SDK.
 - **One key to manage** — Instead of juggling API keys for Anthropic, OpenAI, and whatever comes next, you manage one Vercel token.
 - **Built-in logging** — See usage, costs, and request history in your Vercel dashboard.
 - **Future-proof** — As new AI providers and models launch, AI Gateway adds support. Your app just works.
@@ -47,14 +47,14 @@ Add to your `.env.local`:
 
 ```bash
 AI_GATEWAY_API_KEY=your-vercel-token-here
-AI_PROVIDER=anthropic
+# AI_MODEL=anthropic/claude-opus-4.8
 ```
 
 That's it. The default model is `claude-sonnet-4-5-20250929`. To use OpenAI instead:
 
 ```bash
 AI_GATEWAY_API_KEY=your-vercel-token-here
-AI_PROVIDER=openai
+# AI_MODEL=openai/gpt-5.5
 ```
 
 Optional overrides:
@@ -79,7 +79,7 @@ If you just want to get running with a single provider and don't need the flexib
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxx
-AI_PROVIDER=anthropic
+# AI_MODEL=anthropic/claude-opus-4.8
 ```
 
 ### For OpenAI (GPT-4o)
@@ -91,7 +91,7 @@ AI_PROVIDER=anthropic
 
 ```bash
 OPENAI_API_KEY=sk-xxxxxxxxxxxxx
-AI_PROVIDER=openai
+# AI_MODEL=openai/gpt-5.5
 ```
 
 ### Note
@@ -111,7 +111,7 @@ npm run dev
 Test via CLI:
 
 ```bash
-npm run cli
+npm run agent
 ```
 
 Type something like:
@@ -149,7 +149,7 @@ AI_MODEL=claude-sonnet-4-5-20250929
 - For direct keys: check the key is active in the provider's console
 
 ### "Model not found"
-- Check `AI_PROVIDER` is set to `anthropic` or `openai`
+- Check `AI_MODEL` is a valid AI Gateway model id, e.g. `anthropic/claude-opus-4.8`
 - If using a custom `AI_MODEL`, verify the model name matches what the provider supports
 
 ## Cost

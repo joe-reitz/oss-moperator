@@ -38,14 +38,14 @@ const SETUP_GUIDES = [
   {
     step: "02",
     title: "Set Up AI Gateway",
-    description: "Connect mOperator to an AI model (Claude or GPT-4o). Use AI Gateway or plug in your own API key.",
+    description: "One key, any model. Switch providers by changing a single string.",
     href: "/docs/ai-gateway",
     tag: "Required",
   },
   {
     step: "03",
     title: "Create a Slack App",
-    description: "Set up a Slack bot so your team can talk to mOperator with @mentions and slash commands.",
+    description: "Let your team @mention the agent, or DM it. Vercel Connect manages the token and verification for you.",
     href: "/docs/slack",
     tag: "Required",
   },
@@ -108,15 +108,15 @@ const SETUP_GUIDES = [
 ]
 
 const EXAMPLE_COMMANDS = [
-  { cmd: "@mOperator", text: "What campaigns are active?" },
-  { cmd: "@mOperator", text: "Show me all contacts at Acme Corp" },
-  { cmd: "@mOperator", text: "Export all leads as CSV" },
-  { cmd: "@mOperator", text: "Create a Luma event for our launch party in NYC on March 15" },
-  { cmd: "@mOperator", text: "What shipped this week?" },
-  { cmd: "/moperator bug", text: "Dashboard spinner never stops" },
-  { cmd: "/moperator connect-sfdc", text: "(connect your own SFDC account for attribution)" },
-  { cmd: "@mOperator", text: "List my Google Ads campaigns" },
-  { cmd: "@mOperator", text: "Create a search campaign with $200/day budget" },
+  { cmd: "@mOperator", text: "What campaigns are active, and how many members each?" },
+  { cmd: "@mOperator", text: "Export every contact at Acme Corp as a CSV" },
+  { cmd: "@mOperator", text: "Which campaigns had the worst cost per conversion last month?" },
+  { cmd: "@mOperator", text: "Here's a list from the conference — dedupe it against Salesforce" },
+  { cmd: "@mOperator", text: "Build tracked links for LinkedIn and the newsletter" },
+  { cmd: "@mOperator", text: "Add these 400 contacts to campaign 701xx000000ABCD" },
+  { cmd: "@mOperator", text: "Raise the brand campaign budget to $300/day" },
+  { cmd: "@mOperator", text: "Bug: the pricing form drops UTM parameters" },
+  { cmd: "@mOperator", text: "Create a Luma event for our NYC launch party on March 15" },
 ]
 
 export default function Home() {
@@ -160,16 +160,21 @@ export default function Home() {
           </h2>
           <div className="bg-gray-950 border border-gray-800 rounded-lg p-6 space-y-4">
             <p className="text-gray-300 leading-relaxed">
-              mOperator is an <strong className="text-white">open-source AI agent</strong> that
-              connects your marketing operations tools through a single Slack interface. Ask
-              questions in plain English — mOperator figures out which tools to call, runs the
-              queries, and responds in your thread.
+              mOperator is a <strong className="text-white">marketing operations agent you
+              fork</strong>. It lives in your Slack, works in your CRM and ad accounts, and
+              every rule it follows is a file you can edit — the prompt, the playbooks, the
+              approval policies, the naming conventions.
             </p>
             <p className="text-gray-400 leading-relaxed">
-              Built on <strong className="text-gray-300">Next.js</strong>,{" "}
-              <strong className="text-gray-300">Vercel AI SDK</strong>, and{" "}
-              <strong className="text-gray-300">Vercel AI Gateway</strong>. Deploy to Vercel in minutes.
-              Add your own integrations with a few prompts or lines of code.
+              Built on <strong className="text-gray-300">eve</strong>, Vercel&apos;s framework
+              for durable agents, and deployed as a single{" "}
+              <strong className="text-gray-300">Next.js</strong> project. Turns are durable, so
+              an approval can wait days and resume exactly where it paused — across a redeploy.
+            </p>
+            <p className="text-gray-400 leading-relaxed">
+              Marketing ops is not a generic problem. Your segment field is not their segment
+              field, and your approval chain is specific. A closed product has to average over
+              all of that. A fork does not.
             </p>
             <div className="flex flex-wrap gap-3 pt-2">
               <span className="text-xs px-3 py-1 rounded-full border border-gray-700 text-gray-400">Salesforce</span>
@@ -211,8 +216,12 @@ export default function Home() {
                 <code className="text-green-400">npm run dev</code>
               </div>
               <div>
-                <p className="text-gray-500 mb-1"># Or test via the CLI</p>
-                <code className="text-green-400">npm run cli</code>
+                <p className="text-gray-500 mb-1"># Or talk to the agent in your terminal — no Slack setup needed</p>
+                <code className="text-green-400">npm run agent</code>
+              </div>
+              <div>
+                <p className="text-gray-500 mb-1"># See exactly which integrations, tools, and skills are active</p>
+                <code className="text-green-400">npm run agent:info</code>
               </div>
             </div>
           </div>
@@ -224,47 +233,40 @@ export default function Home() {
             <span className="text-gray-600">$</span> cat .env.example
           </h2>
           <div className="bg-gray-950 border border-gray-800 rounded-lg p-6 text-sm overflow-x-auto">
-            <pre className="text-gray-400 leading-relaxed">{`# ─── AI Model (required — pick one) ───────────────────────────
-# Option A: Vercel AI Gateway (recommended — one key, any model)
-AI_GATEWAY_API_KEY=          # Your Vercel AI Gateway key
-# Option B: Direct API key (simpler, single provider)
-# ANTHROPIC_API_KEY=         # From console.anthropic.com
-# OPENAI_API_KEY=            # From platform.openai.com
-AI_PROVIDER=anthropic        # "anthropic" or "openai"
+            <pre className="text-gray-400 leading-relaxed">{`# ─── Model (required) ────────────────────────────────────────
+# One key, any model, through the Vercel AI Gateway.
+AI_GATEWAY_API_KEY=
+# AI_MODEL=anthropic/claude-opus-4.8    # optional override
 
-# ─── Slack Bot (required) ────────────────────────────────────
-SLACK_BOT_TOKEN=             # xoxb-your-bot-token
-SLACK_BOT_USER_ID=           # The bot's Slack user ID
+# ─── Who can approve writes (required) ───────────────────────
+# Gates the admin pages, and lets these people write to the CRM
+# without waiting for approval. Empty means every write waits.
+AUTHORIZED_USER_EMAILS=
+# GROWTH_MARKETING_APPROVERS=           # who may approve ad spend
 
-# ─── Authorized Users & Approvals ────────────────────────────
-AUTHORIZED_USER_EMAILS=      # Comma-separated emails
-# SLACK_APPROVER_GROUP_ID=   # Slack user group ID
+# ─── Browser sign-in (required for /chat, /console) ──────────
+SLACK_CLIENT_ID=
+SLACK_CLIENT_SECRET=
+MOPERATOR_SESSION_SECRET=               # openssl rand -hex 32
 
-# ─── Redis (required for approvals) ─────────────────────────
-# UPSTASH_REDIS_REST_URL=
-# UPSTASH_REDIS_REST_TOKEN=
+# ─── Slack ───────────────────────────────────────────────────
+# Recommended: npx eve add channel/slack, then set the connector.
+# MOPERATOR_SLACK_CONNECTOR=slack/moperator
+SLACK_BOT_TOKEN=
+SLACK_SIGNING_SECRET=
 
-# ─── Salesforce (optional) ───────────────────────────────────
-SALESFORCE_CLIENT_ID=
-SALESFORCE_CLIENT_SECRET=
+# ─── Your conventions (optional, high value) ─────────────────
+MOPERATOR_ORG_NAME=Acme
+MOPERATOR_TIMEZONE=America/New_York
+MOPERATOR_CAMPAIGN_NAME_EXAMPLE=NAM-FY26Q1-webinar-launch
+
+# ─── Integrations: set the keys, the tools appear ────────────
 SALESFORCE_ACCESS_TOKEN=
 SALESFORCE_INSTANCE_URL=
-
-# ─── HubSpot (optional) ─────────────────────────────────────
-HUBSPOT_API_TOKEN=           # Private App access token
-
-# ─── Marketo (optional) ─────────────────────────────────────
-MARKETO_CLIENT_ID=
-MARKETO_CLIENT_SECRET=
-MARKETO_REST_ENDPOINT=       # e.g., https://123-ABC-456.mktorest.com
-
-# ─── Project Management (optional) ──────────────────────────
+HUBSPOT_API_TOKEN=
 LINEAR_API_KEY=
-LINEAR_TEAM_NAME=ENG
-
-# ─── GitHub (optional) ──────────────────────────────────────
-GITHUB_TOKEN=                # Personal access token
-GITHUB_REPO=owner/repo       # e.g., acme/marketing-site`}</pre>
+GOOGLE_ADS_CUSTOMER_ID=
+LUMA_API_KEY=`}</pre>
           </div>
         </section>
 
@@ -391,23 +393,24 @@ GITHUB_REPO=owner/repo       # e.g., acme/marketing-site`}</pre>
             <span className="text-gray-600">$</span> cat architecture.txt
           </h2>
           <div className="bg-gray-950 border border-gray-800 rounded-lg p-6">
-            <pre className="text-gray-400 text-xs sm:text-sm overflow-x-auto leading-relaxed">{`CLI (npm run cli)     Slack (@mOperator)
-    |                      |
-    v                      v
-POST /api/agent      POST /api/slack
-    |                      |
-    +----------+-----------+
-               |
-               v
-    AI SDK (Claude / GPT-4o)
-               |
-               +-- Tools (auto-discovered from integrations):
-                   +-- Salesforce (if configured)
-                   +-- HubSpot (if configured)
-                   +-- Marketo (if configured)
-                   +-- Project Management (if configured)
-                   +-- GitHub (if configured)
-                   +-- Your custom tools`}</pre>
+            <pre className="text-gray-400 text-xs sm:text-sm overflow-x-auto leading-relaxed">{`Slack (@mOperator)     Browser (/chat)      Cron (schedules)
+        |                     |                    |
+        v                     v                    v
+ /eve/v1/slack        /eve/v1/session      agent/schedules/*
+        |                     |                    |
+        +----------+----------+--------------------+
+                   |
+                   v
+            the agent runtime  (durable turns: an approval
+                   |            can wait days and resume)
+   +---------------+---------------+---------------+
+   v               v               v               v
+tools/          skills/       subagents/        sandbox
+env-gated    load on demand  read-only      /workspace + pandas
+   |
+   v
+Salesforce  HubSpot  Marketo  Google Ads  Linear  GitHub  Luma
+        (only the ones you configure)`}</pre>
           </div>
           <div className="mt-3">
             <Link
@@ -431,12 +434,14 @@ POST /api/agent      POST /api/slack
               Treat it like a production service.
             </p>
             <ul className="space-y-2 text-sm text-gray-400">
-              <li className="flex gap-2"><span className="text-green-400">+</span> Slack signature verification on every webhook (<code className="text-gray-300">SLACK_SIGNING_SECRET</code>)</li>
-              <li className="flex gap-2"><span className="text-green-400">+</span> Admin pages gated by <code className="text-gray-300">AUTHORIZED_USER_EMAILS</code> + Slack OAuth sign-in</li>
-              <li className="flex gap-2"><span className="text-green-400">+</span> Per-user Salesforce OAuth — SFDC writes show the actual user, not a service account</li>
-              <li className="flex gap-2"><span className="text-green-400">+</span> AES-256-GCM encrypted refresh tokens in Redis, 90-day TTL on inactivity</li>
-              <li className="flex gap-2"><span className="text-green-400">+</span> Approval workflow with Slack buttons for every write operation</li>
-              <li className="flex gap-2"><span className="text-green-400">+</span> Read-only SOQL validator on the console — DML keywords rejected at the server</li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> Every write gated by a policy in code, not a prompt instruction</li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> Bulk writes reviewed above a threshold, refused above a hard cap — splitting the batch does not help</li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> Deletions and sends always need a human, and can never fire from a schedule</li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> Ad spend verified twice — at the gate and at the moment of effect, so nobody approves their own budget</li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> A read-only analyst subagent with no write tools in its tool set at all</li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> SOQL validated against DML, statement stacking, and comment-hidden mutations</li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> Slack signature verification handled by the channel; admin pages gated by <code className="text-gray-300">AUTHORIZED_USER_EMAILS</code></li>
+              <li className="flex gap-2"><span className="text-green-400">+</span> Per-user Salesforce OAuth, so writes name the person — AES-256-GCM tokens, 90-day sliding expiry</li>
             </ul>
             <div className="pt-2 flex flex-col sm:flex-row gap-3">
               <Link href="/docs/security" className="text-green-400 text-sm hover:underline">
@@ -456,22 +461,22 @@ POST /api/agent      POST /api/slack
           </h2>
           <div className="bg-gray-950 border border-gray-800 rounded-lg p-6">
             <div className="grid sm:grid-cols-2 gap-x-8 gap-y-2 text-sm text-gray-400">
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Natural language queries against Salesforce</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> SOQL Console — NL → SOQL → CSV at <code className="text-gray-300">/console</code></div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Analytics dashboard at <code className="text-gray-300">/analytics</code></div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Audience vocabulary admin at <code className="text-gray-300">/audience-vocab</code></div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Create, update, and delete records (with approval)</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Bulk update hundreds of records at once</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> CSV export as Slack file attachment</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> CSV upload — attach a file and process it</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Thread context for follow-up questions</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Per-user SFDC OAuth for write attribution</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Auto-discovered integrations via env vars</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> HubSpot contacts, companies, deals, and lists</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Marketo leads, campaigns, programs, and emails</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> Luma event creation with compliance Q&apos;s</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> File bugs and features to your PM tool from Slack</div>
-              <div className="flex items-center gap-2"><span className="text-green-400">+</span> GitHub commit history and release notes</div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Answers from the full result set — CSVs analyzed with pandas in a sandbox, not 50 rows in a prompt</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Durable approvals — a pending write survives a redeploy and never expires</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Browser chat at <code className="text-gray-300">/chat</code> with the same tools and rules as Slack</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Seven playbooks the agent loads on demand — SOQL, audiences, launches, list hygiene</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>A read-only analyst subagent for &ldquo;go find out&rdquo; work</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Scheduled digests — campaign activity, ad spend anomalies, weekly triage</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>UTM builder and auditor enforcing your conventions</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Campaign name checker, so quarter-over-quarter reporting still works</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Attach a list in Slack and it gets deduped against your CRM</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>SOQL console at <code className="text-gray-300">/console</code> — natural language to SOQL to CSV</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Usage analytics at <code className="text-gray-300">/analytics</code></span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Audience vocabulary at <code className="text-gray-300">/audience-vocab</code> — teach it what &ldquo;segment&rdquo; means, no deploy</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Integrations activate from env vars; the prompt updates itself</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Per-user Salesforce OAuth for real write attribution</span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Evals — verify your own fork with <code className="text-gray-300">npm run eval</code></span></div>
+              <div className="flex items-center gap-2"><span className="text-green-400">+</span> <span>Add Teams, Discord, or SMS with one command</span></div>
             </div>
           </div>
         </section>
@@ -479,7 +484,7 @@ POST /api/agent      POST /api/slack
         {/* Footer */}
         <footer className="border-t border-gray-800 pt-8 pb-12 text-center">
           <p className="text-gray-600 text-sm">
-            Built with Next.js, Vercel AI SDK, and Claude
+            Built with eve, Next.js, and the Vercel AI Gateway
           </p>
           <p className="text-gray-700 text-xs mt-2">
             <a

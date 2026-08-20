@@ -1,213 +1,246 @@
-# Design Your Own Integrations with AI
+# Design your own with AI
 
-The existing [Adding Integrations](adding-integrations.md) guide covers the technical structure — three files, register, done. This guide is about the bigger picture: **using AI coding tools to design and build entirely new apps** that plug into mOperator.
+[Adding integrations](adding-integrations.md) covers the mechanics — a client, a
+tool file, a registry entry. This is about the bigger move: using an AI coding tool
+to build capabilities your team specifically needs.
 
-You don't need to be a developer. If you can describe what you want, you can build it.
-
----
-
-## The Idea
-
-mOperator ships with Salesforce, Linear, and GitHub integrations. But the real power is building your own. Think of each integration as a small app that teaches mOperator a new skill.
-
-Some examples from real marketing ops teams:
-
-- **List Import Agent** — Upload a CSV to Slack, mOperator validates emails, dedupes against your CRM, and imports clean contacts
-- **Data Dictionary** — mOperator understands your field mappings, lifecycle stages, and scoring models so it writes better SOQL
-- **Campaign QA Bot** — Checks naming conventions, UTM parameters, and audience sizing before you hit send
-- **Reporting Agent** — Pulls data from your BI tool and posts formatted weekly reports to Slack
-- **Lead Routing Helper** — Looks up territory assignments and suggests routing rules based on your current data
-
-None of these exist out of the box. They're custom to your team's workflow. That's the point.
+You do not have to be a developer. If you can describe the process, you can get it
+built — and much of the time what you need is a markdown file, not code.
 
 ---
 
-## How to Build One (The Vibecoding Approach)
+## The idea
 
-You don't need to write code from scratch. Use an AI coding tool — Claude, Cursor, GitHub Copilot, whatever you prefer — and describe what you want.
+mOperator ships with seven integrations and seven skills. The point is that yours
+will be different. Every marketing ops team has a handful of processes nobody else
+runs, and those are exactly the ones worth automating.
 
-### Step 1: Describe the Integration
+Things teams have built on top of this:
 
-Start with a clear prompt to your AI coding tool. Here's a template:
+- **Campaign QA** — checks naming, UTMs, audience size, and opt-out filtering
+  before anything sends
+- **Weekly exec numbers** — the same five metrics from the same five fields, so
+  nobody rebuilds the query every Monday
+- **Lead routing** — looks up territory assignments and explains why a lead landed
+  where it did
+- **BI reporting** — pulls from the warehouse and posts a formatted digest
+- **Deliverability watch** — bounce and complaint rates by domain, flagged before
+  the next send
+
+Note how few of those need a new API client. Most are a skill plus tools the agent
+already has.
+
+## How to build one
+
+You do not need to write it from scratch. Use an AI coding tool and describe what
+you want. This repo is set up to help it help you: `AGENTS.md` documents the
+conventions, and `node_modules/eve/docs/` has the full framework reference on disk.
+
+### Step 1: point it at the docs
+
+Start with this, and be specific about the docs — otherwise it will guess at an
+API from memory and you will spend the session correcting it.
 
 ```
-I'm building an integration for mOperator (a Next.js app using the Vercel AI SDK).
+I'm adding an integration to mOperator, an eve agent.
+
+Before writing code, read:
+- AGENTS.md (conventions for this repo)
+- docs/adding-integrations.md (the template)
+- agent/tools/salesforce.ts (a real example, including approval policies)
+- node_modules/eve/docs/tools/overview.mdx (the framework API)
 
 The integration should:
-- [What it does in plain English]
-- [What external API or data source it connects to]
-- [What actions the AI agent should be able to take]
+- [what it does, in plain English]
+- [which API it talks to — paste the API docs]
+- [which actions the agent should be able to take]
 
-The integration needs three files:
-1. client.ts — handles API calls to [service]
-2. tools.ts — defines AI SDK tools using the tool() function from 'ai' with zod schemas
-3. index.ts — exports the integration manifest (name, description, capabilities, isConfigured)
-
-Here's an example of an existing integration for reference:
-[paste the weather example from adding-integrations.md]
+Follow the repo's pattern: a client in agent/lib/<name>/client.ts, one
+dynamic tool file in agent/tools/<name>.ts gated on isConfigured(), and an
+entry in agent/lib/integrations.ts.
 ```
 
-### Step 2: Give It Context
+### Step 2: be explicit about writes
 
-The more context you give, the better the result. Share:
+This is the part an AI tool will get wrong if you do not say it. Tell it which
+actions change state, and which policy each needs:
 
-- The API documentation for whatever service you're connecting to
-- Your `.env.example` file (so it knows the pattern for env vars)
-- The `src/lib/integrations/types.ts` file (so it knows the Integration interface)
-- An existing integration folder (like `src/lib/integrations/github/`) as a reference
+```
+These actions modify data and need approval policies from agent/lib/approval.ts:
+- create/update a record -> writeApproval()
+- anything touching a list -> bulkApproval(input => input?.ids?.length ?? 0)
+- delete -> deleteApproval()
+- anything that emails or messages real people -> externalSendApproval()
+- anything that spends money -> spendApproval() plus requireSpendApprover(ctx)
+  at the top of execute
+```
 
-### Step 3: Iterate
+A tool with no `approval` runs unattended. On a CRM that is how you end up
+explaining an unreviewed bulk update to your team.
 
-Your first version won't be perfect. That's fine. Test it:
+### Step 3: test it
 
 ```bash
-npm run dev
-npm run cli
+npm run agent:info    # did eve discover the tool?
+npm run agent         # talk to it
 ```
 
-Ask mOperator to use the new tool. If it doesn't work, paste the error back into your AI coding tool and ask it to fix it. This loop — describe → generate → test → fix — is how vibecoding works.
+`agent:info` first. If the tool is not listed, the file is in the wrong place or
+the registry entry is missing, and the answer is in the diagnostics rather than in
+the conversation.
 
-### Step 4: Register It
+Then ask for the thing the tool is for. If it fails, paste the error back — the
+loop of describe, generate, test, fix is the whole workflow.
 
-Once the three files work, register the integration in `src/lib/integrations/index.ts`:
+### Step 4: pin the behavior
 
-```typescript
-import { myIntegration } from './myservice'
-
-const ALL_INTEGRATIONS: Integration[] = [
-  // existing integrations...
-  myIntegration,
-]
-```
-
-Set the env vars, restart the app, and you're live.
-
----
-
-## Real Example: List Import Agent
-
-Here's how a team built a list import agent using this approach.
-
-### The Problem
-
-Marketing ops needed to import contact lists into Salesforce from Slack. The old process: download CSV → open in Excel → clean it up → upload to Salesforce → wait → check for errors. Took 30 minutes per list.
-
-### The Prompt
+Once it works, write an eval so it keeps working:
 
 ```
-Build a mOperator integration called "list-import" that:
-
-1. Accepts a CSV file uploaded to Slack (mOperator already handles file downloads)
-2. Parses the CSV and validates:
-   - Email format is valid
-   - Required fields (FirstName, LastName, Email) are present
-   - No duplicate emails in the file
-3. Checks each email against Salesforce to find existing contacts
-4. Returns a summary: "X new contacts, Y already exist, Z have errors"
-5. If the user confirms, creates the new contacts in Salesforce
-
-The client.ts should:
-- Parse CSV content into records
-- Validate email format with a regex
-- Check for required fields
-- Dedupe by email
-
-The tools.ts should have two tools:
-- validateImportList: takes CSV content, returns validation summary
-- executeImport: takes validated records, creates them in Salesforce
-
-Use the existing Salesforce client for creating records.
+Add an eval under evals/ that sends a realistic request, asserts the run
+succeeded, and asserts my new tool was called. Follow
+evals/tracking/utm-conventions.eval.ts.
 ```
 
-### The Result
+Then `npm run eval`. This is what tells you a prompt edit three weeks from now
+broke your integration.
 
-The AI coding tool generated the three files. After two rounds of fixes (a CSV parsing edge case and a Salesforce field mapping issue), it worked. The team went from 30 minutes per import to 2 minutes — upload the CSV, confirm, done.
+### Step 5: teach it the procedure
 
----
-
-## Real Example: Data Dictionary
-
-### The Problem
-
-mOperator kept writing bad SOQL queries because it didn't understand custom fields. `Account.MQL_Score__c` isn't obvious.
-
-### The Prompt
+A tool gives the agent an ability. A **skill** gives it your team's way of using
+that ability — and it is usually the higher-value half.
 
 ```
-Build a mOperator integration called "data-dictionary" that:
-
-1. Reads a CSV from a URL (our internal data dictionary spreadsheet)
-2. The CSV has columns: Object, API_Name, Label, Description, Type
-3. Provides a tool that the AI can call to look up field definitions
-4. The tool should support searching by object name, field label, or description
-
-This is read-only — no writes needed. The CSV URL comes from an env var:
-DATA_DICTIONARY_URL=https://docs.google.com/spreadsheets/d/.../export?format=csv
+Add a skill at agent/skills/<name>.md with a `description` in the frontmatter
+describing when to use it. Content: the steps our team follows for [process],
+including the checks people forget.
 ```
 
-### The Result
+The skill is where "how we actually run a send" belongs. Start by writing down
+what you find yourself explaining to new hires.
 
-Now when someone asks "show me accounts with high MQL scores," mOperator looks up the data dictionary, finds `MQL_Score__c`, and writes the correct SOQL. The team maintains the dictionary in Google Sheets and mOperator always has the latest version.
+## Two examples that shipped
 
----
+Both of these started as custom integrations on teams using mOperator. Both are
+now in the box — which is the best argument for building your own: the useful ones
+graduate.
 
-## Tips for Good Integrations
+### List import, which became a skill and a sandbox
 
-### Keep tools focused
-Each tool should do one thing. Instead of one giant `doEverything` tool, have `validateList`, `importContacts`, `checkDuplicates`. The AI model is better at choosing the right tool when each one has a clear purpose.
+**The problem.** Importing contact lists from Slack meant download the CSV, clean
+it in Excel, upload to Salesforce, wait, check for errors. Thirty minutes a list.
 
-### Return structured data
-Always return `{ success: true, data: ... }` or `{ success: false, error: "..." }`. This helps the AI model understand what happened and explain it to the user.
+**What it needed** was not really a tool. The agent already had a filesystem and
+Salesforce access; what it lacked was the *procedure* — normalize before comparing,
+check against the CRM and not just within the file, never re-add an unsubscribed
+address whatever the spreadsheet says.
 
-### Handle errors gracefully
-If an API call fails, don't crash — return the error message. The AI will explain it to the user in plain English.
+That is `agent/skills/list-hygiene.md`. Read it before building your own version;
+you may only need to change the checks.
 
-### Use descriptive names
-Tool names and descriptions matter. The AI model reads them to decide which tool to use. `validateEmailList` is better than `processData`.
+### Data dictionary, which became the audience vocabulary
 
-### Test with the CLI first
-`npm run cli` is faster than testing through Slack. Get the tool working locally before deploying.
+**The problem.** The agent wrote bad SOQL because `Account.MQL_Score__c` is not
+guessable, and "segment" meant one specific custom field that no amount of schema
+inspection would identify.
 
----
+**What it became** is the audience vocabulary: a curated map from marketer-speak to
+canonical field paths, editable at `/audience-vocab` without a deploy, injected
+into the system prompt at session start. Crucially it also carries an `avoid` list
+— "not `Segment__c`, that stopped syncing in 2024" — which is the part a schema
+dump can never tell you.
 
-## Standalone Apps That Connect to mOperator
+If your dictionary lives in a spreadsheet, the integration worth building is a
+sync into the vocabulary store, not a lookup tool.
 
-You can also build completely separate apps that mOperator connects to via API. This is useful when:
+## What makes a good integration
 
-- The integration is complex enough to be its own service
-- You want to share it across multiple bots or tools
-- The integration needs its own database or state
+**One tool, one job.** `validate_import_list`, `import_contacts`,
+`check_duplicates` — not one `do_everything`. The model picks the right tool when
+each has a clear purpose, and a narrow tool is far easier to gate correctly.
 
-The pattern:
+**Never throw.** Return `{ success: false, error }` with the API's own message. A
+thrown error is a failure the model cannot explain; a returned one is something it
+can report or work around.
 
-1. Build a standalone API (could be another Next.js app, a Python service, whatever)
-2. Deploy it somewhere (Vercel, Railway, your own server)
-3. Create a mOperator integration that calls your API
+**Write the description for the model.** It is the only thing between the model and
+the wrong tool. Say when to use it, what to call first, and what the usual mistake
+is. Compare: `process_data` versus "Validate a contact list before import. Call
+`describe_salesforce_object` first if you are unsure which fields are required."
 
-Your integration's `client.ts` just makes HTTP calls to your standalone app:
+**Return paths, not payloads.** If a tool can produce many rows, write them to
+`/workspace` and return the path. The Slack channel attaches the file and the model
+reasons about a summary instead of burning its context.
 
-```typescript
-const API_URL = process.env.MY_APP_API_URL
+**Gate anything that changes state.** Reads need no policy. Everything else does.
+See the table in [adding-integrations.md](adding-integrations.md).
 
-export async function processData(input: string): Promise<Result> {
-  const response = await fetch(`${API_URL}/api/process`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+**Ask whether it should be a skill instead.** If the agent already has the tools
+and what is missing is knowing *how your team does it*, write a skill. It is a
+markdown file, it costs nothing when not loaded, and it is the thing your ops team
+can maintain without touching TypeScript.
+
+## Separate services
+
+Sometimes the capability belongs in its own service — it needs a database, it is
+shared across several tools, or it is complex enough to deserve its own tests.
+
+Three ways to connect one, cheapest first:
+
+**1. It already speaks MCP.** Then it is a connection, not a client:
+
+```ts
+// agent/connections/my-service.ts
+import { defineMcpClientConnection } from "eve/connections"
+import { once } from "eve/tools/approval"
+
+export default defineMcpClientConnection({
+  url: "https://my-service.internal/mcp",
+  description: "What it does, written for the model.",
+  auth: { getToken: async () => ({ token: process.env.MY_SERVICE_TOKEN! }) },
+  approval: once(),  // policies in agent/lib/approval.ts do NOT cover connections
+})
+```
+
+**2. It has an OpenAPI document.** Same idea with `defineOpenAPIConnection` and a
+`spec` URL — eve turns each operation into a tool.
+
+**3. It is a plain HTTP API.** Then it is an ordinary integration: a client that
+fetches, and a tool file. See [adding-integrations.md](adding-integrations.md).
+
+```ts
+// agent/lib/my-service/client.ts
+export async function processData(input: string) {
+  const response = await fetch(`${process.env.MY_SERVICE_URL}/process`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${process.env.MY_SERVICE_TOKEN}`,
+    },
     body: JSON.stringify({ input }),
   })
+  if (!response.ok) {
+    throw new Error(`my-service ${response.status}: ${await response.text()}`)
+  }
   return response.json()
 }
 ```
 
-This way your custom app can be as complex as it needs to be, and mOperator just knows how to talk to it.
+The one thing to get right in all three cases: a connection's tools are not
+covered by this repo's approval policies, because you did not author them. If any
+of them can create, modify, delete, or send, set `approval` on the connection
+itself.
 
 ---
 
-## Getting Help
+## Getting help
 
-- Check the [Adding Integrations](adding-integrations.md) guide for the technical structure
-- Look at existing integrations in `src/lib/integrations/` for reference
-- Use AI coding tools to generate the boilerplate — focus your energy on describing what you need
-- Test early and often with `npm run cli`
+- [Adding integrations](adding-integrations.md) — the mechanics and a template
+- [Fork this](fork-this.md) — the wider customization path
+- `AGENTS.md` — conventions, and the mistakes worth avoiding
+- `agent/tools/salesforce.ts` — the most complete real example in the repo
+- `node_modules/eve/docs/` — the framework reference, matching your installed version
+- `npm run agent:info` — what the framework actually found on disk
 
-The best integrations come from real pain points. If you find yourself doing something manually more than twice, it's probably a good candidate for a mOperator integration.
+The best additions come from real pain. If you do something by hand more than
+twice, write it down as a skill first — often that is the entire fix.

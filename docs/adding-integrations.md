@@ -1,465 +1,244 @@
-# Adding Custom Integrations
+# Adding an integration
 
-This guide explains how to add a new integration to mOperator. For example, you might want to connect to a weather API, a custom internal tool, or a SaaS platform.
+Three files and one registry entry. The pattern is the same whether you are
+adding Braze, Amplitude, Segment, or your own internal API.
 
-An integration is a self-contained module that teaches mOperator about an external service.
+Before you write any of it, check whether the service already has an MCP server —
+if it does, a connection is a few lines instead of a client. See
+[More capabilities](connections.md).
 
-## Integration Structure
+---
 
-Each integration lives in `src/lib/integrations/<service_name>/` with three files:
+## The shape
 
 ```
-src/lib/integrations/myservice/
-├── client.ts          # API client (handles authentication, requests)
-├── tools.ts           # AI SDK tools (what the AI can do)
-└── index.ts           # Module export (describes the integration)
+agent/lib/braze/client.ts    the API client — auth, HTTP, error normalization
+agent/tools/braze.ts         the tools the model sees, gated on configuration
+agent/lib/integrations.ts    one entry so the prompt and gating know about it
 ```
 
-## Step 1: Create the Folder
+## 1. The client
 
-```bash
-mkdir -p src/lib/integrations/myservice
-```
+Keep it dumb: authentication, requests, and throwing useful errors. No AI
+concepts, no approval logic. This is also the file the SOQL console and other
+non-agent code can import, so it must not depend on the agent runtime.
 
-## Step 2: Create the API Client (`client.ts`)
+```ts
+// agent/lib/braze/client.ts
+/**
+ * Braze API client.
+ *
+ * One place for the base URL, the key, and error shaping. Tools stay thin.
+ */
 
-This file handles all communication with your external service.
+const BASE_URL = process.env.BRAZE_REST_ENDPOINT
 
-```typescript
-// src/lib/integrations/myservice/client.ts
+function requireConfig(): { endpoint: string; apiKey: string } {
+  const endpoint = process.env.BRAZE_REST_ENDPOINT
+  const apiKey = process.env.BRAZE_API_KEY
+  if (!endpoint || !apiKey) {
+    throw new Error("Braze is not configured: set BRAZE_REST_ENDPOINT and BRAZE_API_KEY.")
+  }
+  return { endpoint, apiKey }
+}
 
-const API_KEY = process.env.MYSERVICE_API_KEY
-const API_BASE = 'https://api.myservice.com'
-
-export async function getWeather(city: string): Promise<{
-  temp: number
-  description: string
-  icon: string
-}> {
-  if (!API_KEY) throw new Error('MYSERVICE_API_KEY not configured')
-
-  const response = await fetch(`${API_BASE}/weather?city=${encodeURIComponent(city)}`, {
-    headers: { 'Authorization': `Bearer ${API_KEY}` }
+async function brazeFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const { endpoint, apiKey } = requireConfig()
+  const response = await fetch(`${endpoint}${path}`, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+      ...init?.headers,
+    },
   })
 
   if (!response.ok) {
-    throw new Error(`Weather API error: ${response.statusText}`)
+    // Include the body: an API's own error message is far more useful to the
+    // model than "request failed", and it is what lets it correct itself.
+    const body = await response.text()
+    throw new Error(`Braze ${response.status}: ${body.slice(0, 500)}`)
   }
 
-  return response.json()
+  return (await response.json()) as T
 }
 
-export async function getForecast(city: string, days: number = 5): Promise<{
-  date: string
-  temp: number
-  description: string
-}[]> {
-  if (!API_KEY) throw new Error('MYSERVICE_API_KEY not configured')
-
-  const response = await fetch(
-    `${API_BASE}/forecast?city=${encodeURIComponent(city)}&days=${days}`,
-    { headers: { 'Authorization': `Bearer ${API_KEY}` } }
+export async function listCampaigns(page = 0) {
+  return brazeFetch<{ campaigns: Array<{ id: string; name: string }> }>(
+    `/campaigns/list?page=${page}`
   )
+}
 
-  if (!response.ok) {
-    throw new Error(`Forecast API error: ${response.statusText}`)
-  }
-
-  return response.json()
+export async function sendCampaign(campaignId: string, userIds: string[]) {
+  return brazeFetch("/campaigns/trigger/send", {
+    method: "POST",
+    body: JSON.stringify({
+      campaign_id: campaignId,
+      recipients: userIds.map((id) => ({ external_user_id: id })),
+    }),
+  })
 }
 ```
 
-**Best practices:**
-- Check env vars early, throw clear errors
-- Use meaningful error messages
-- Return typed data (use TypeScript interfaces)
-- Handle API errors gracefully
+## 2. Register it
 
-## Step 3: Create AI SDK Tools (`tools.ts`)
+`agent/lib/integrations.ts` drives two things: whether the tools appear, and what
+the system prompt says. The `capabilities` and `examples` are written for the
+model, not for a README — they are what it reads to decide whether this
+integration is relevant.
 
-This file defines what the AI model can do with your service. Each tool is a function the AI can call.
-
-```typescript
-// src/lib/integrations/myservice/tools.ts
-
-import { tool } from 'ai'
-import { z } from 'zod'
-import * as client from './client'
-
-export const myserviceTools = {
-  getWeather: tool({
-    description: 'Get current weather for a city',
-    inputSchema: z.object({
-      city: z.string().describe('City name (e.g., "San Francisco")'),
-    }),
-    execute: async ({ city }) => {
-      try {
-        const weather = await client.getWeather(city)
-        return {
-          success: true as const,
-          city,
-          temp: weather.temp,
-          description: weather.description,
-        }
-      } catch (error) {
-        return {
-          success: false as const,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        }
-      }
-    },
-  }),
-
-  getForecast: tool({
-    description: 'Get weather forecast for a city over multiple days',
-    inputSchema: z.object({
-      city: z.string().describe('City name'),
-      days: z.number().optional().describe('Number of days (default 5)'),
-    }),
-    execute: async ({ city, days }) => {
-      try {
-        const forecast = await client.getForecast(city, days)
-        return {
-          success: true as const,
-          city,
-          forecast: forecast.map(day => ({
-            date: day.date,
-            temp: day.temp,
-            description: day.description,
-          })),
-        }
-      } catch (error) {
-        return {
-          success: false as const,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        }
-      }
-    },
-  }),
-}
-```
-
-**Important:**
-- Use `tool()` from the `ai` package
-- Define `inputSchema` using Zod (NOT `parameters`)
-- Always return `{ success: true/false, ... }` format
-- If a tool fails, return `success: false` with an error message
-- Do NOT fabricate or hallucinate data — return real results or fail
-- Use `.describe()` to explain parameters to the AI
-
-## Step 4: Create the Module Export (`index.ts`)
-
-This file tells mOperator about your integration.
-
-```typescript
-// src/lib/integrations/myservice/index.ts
-
-import type { Integration } from '../types'
-import { myserviceTools } from './tools'
-
-export const myserviceIntegration: Integration = {
-  name: 'Weather Service',
-  description: 'Real-time weather data and forecasts',
+```ts
+{
+  id: "braze",
+  name: "Braze",
+  description: "Cross-channel messaging — campaigns, canvases, user profiles",
   capabilities: [
-    'Get current weather for any city',
-    'View 5-day weather forecast',
-    'Check temperature and conditions',
+    "List campaigns and canvases with their IDs",
+    "Look up a user profile by external id",
+    "Trigger an API campaign for specific users (always requires approval)",
   ],
   examples: [
-    'What\'s the weather in New York?',
-    'Show me the forecast for San Francisco',
-    'Is it going to rain tomorrow in Seattle?',
+    "What Braze campaigns are live?",
+    "Send the onboarding campaign to these 40 users",
   ],
-  isConfigured: () => {
-    return !!process.env.MYSERVICE_API_KEY
-  },
-  getTools: () => myserviceTools,
+  requires: ["BRAZE_REST_ENDPOINT", "BRAZE_API_KEY"],
+  setupGuide: "docs/setup-braze.md",
 }
 ```
 
-**What each field does:**
-- `name` — Display name in system prompts
-- `description` — One-line summary
-- `capabilities` — List of things the AI can do (shown to users)
-- `examples` — Sample prompts users can try
-- `isConfigured()` — Check if required env vars exist (return false if not)
-- `getTools()` — Return the tools object from tools.ts
+`requires` is doing real work: it gates the tools, and it is what the agent
+quotes back when someone asks for Braze on an install that has none.
 
-## Step 5: Register the Integration
+## 3. The tools
 
-Add your integration to the loader:
+One file, `agent/tools/<id>.ts`, returning a map of tools only when the
+integration is configured. That gating is the point — the model never sees a tool
+it cannot run, so it never promises work this install cannot do.
 
-```typescript
-// src/lib/integrations/index.ts (existing file)
+```ts
+// agent/tools/braze.ts
+import { defineDynamic, defineTool } from "eve/tools"
+import { z } from "zod"
 
-// Add at the top with other imports:
-import { myserviceIntegration } from './myservice'
+import { externalSendApproval } from "../lib/approval"
+import * as braze from "../lib/braze/client"
+import { isConfigured } from "../lib/integrations"
 
-// Add to the ALL_INTEGRATIONS array:
-const ALL_INTEGRATIONS: Integration[] = [
-  salesforceIntegration,
-  linearIntegration,
-  githubIntegration,
-  myserviceIntegration,  // ← Add your integration here
-]
-```
-
-## Step 6: Set Environment Variable
-
-mOperator uses env vars to discover integrations. Add to `.env.local`:
-
-```bash
-MYSERVICE_API_KEY=your-api-key-here
-```
-
-## Step 7: Test
-
-Restart your app:
-
-```bash
-npm run dev
-```
-
-Test in Slack:
-
-```
-@mOperator what's the weather in Paris?
-```
-
-or via CLI:
-
-```bash
-npm run cli
-```
-
-Then type:
-
-```
-what's the weather in London?
-```
-
-## Complete Example: Weather Integration
-
-Here's a working example you can use as a template:
-
-### `src/lib/integrations/weather/client.ts`
-
-```typescript
-const API_KEY = process.env.WEATHER_API_KEY
-const API_BASE = 'https://api.open-meteo.com/v1'
-
-interface WeatherData {
-  temp: number
-  description: string
-  condition: string
-}
-
-export async function getWeather(lat: number, lon: number): Promise<WeatherData> {
-  if (!API_KEY) throw new Error('WEATHER_API_KEY not set')
-
-  const url = new URL(`${API_BASE}/forecast`)
-  url.searchParams.append('latitude', lat.toString())
-  url.searchParams.append('longitude', lon.toString())
-  url.searchParams.append('current', 'temperature_2m,weather_code')
-
-  const response = await fetch(url.toString())
-  if (!response.ok) throw new Error(`Weather API: ${response.statusText}`)
-
-  const data: any = await response.json()
+function fail(error: unknown, fallback: string) {
   return {
-    temp: data.current.temperature_2m,
-    condition: describeWeatherCode(data.current.weather_code),
-    description: `${data.current.temperature_2m}°C`,
+    success: false as const,
+    error: error instanceof Error ? error.message : fallback,
   }
 }
 
-function describeWeatherCode(code: number): string {
-  const codes: Record<number, string> = {
-    0: 'clear',
-    1: 'cloudy',
-    2: 'cloudy',
-    3: 'overcast',
-    45: 'foggy',
-    48: 'foggy',
-    51: 'light drizzle',
-    53: 'moderate drizzle',
-    55: 'heavy drizzle',
-    61: 'slight rain',
-    63: 'moderate rain',
-    65: 'heavy rain',
-    71: 'slight snow',
-    73: 'moderate snow',
-    75: 'heavy snow',
-    77: 'snow grains',
-  }
-  return codes[code] || 'unknown'
-}
-```
+export default defineDynamic({
+  events: {
+    "session.started": () => {
+      if (!isConfigured("braze")) return null
 
-### `src/lib/integrations/weather/tools.ts`
+      return {
+        list_braze_campaigns: defineTool({
+          description:
+            "List Braze campaigns with their IDs and status. Call this before triggering anything, so you use the right campaign.",
+          inputSchema: z.object({
+            page: z.number().min(0).optional().describe("Zero-indexed page"),
+          }),
+          async execute({ page }) {
+            try {
+              return { success: true as const, ...(await braze.listCampaigns(page)) }
+            } catch (error) {
+              return fail(error, "Failed to list campaigns")
+            }
+          },
+        }),
 
-```typescript
-import { tool } from 'ai'
-import { z } from 'zod'
-import * as client from './client'
+        send_braze_campaign: defineTool({
+          description: `Trigger a Braze API campaign for specific users. This SENDS — treat it as irreversible.
 
-// Mock coordinates (in real integration, use a geocoding API)
-const CITIES: Record<string, [number, number]> = {
-  'new york': [40.7128, -74.0060],
-  'london': [51.5074, -0.1278],
-  'tokyo': [35.6762, 139.6503],
-  'paris': [48.8566, 2.3522],
-}
-
-export const weatherTools = {
-  getCurrentWeather: tool({
-    description: 'Get current weather for a city',
-    inputSchema: z.object({
-      city: z.string().describe('City name (e.g., "New York", "London")'),
-    }),
-    execute: async ({ city }) => {
-      try {
-        const coords = CITIES[city.toLowerCase()]
-        if (!coords) {
-          return {
-            success: false as const,
-            error: `City not supported: ${city}. Try: ${Object.keys(CITIES).join(', ')}`,
-          }
-        }
-
-        const weather = await client.getWeather(coords[0], coords[1])
-        return {
-          success: true as const,
-          city,
-          ...weather,
-        }
-      } catch (error) {
-        return {
-          success: false as const,
-          error: error instanceof Error ? error.message : 'Failed to fetch weather',
-        }
+Before calling, state the campaign name, the exact user count, and what those people will receive. Always requires human approval, and cannot run from a scheduled task.`,
+          inputSchema: z.object({
+            campaign_id: z.string().describe("The Braze campaign ID"),
+            user_ids: z
+              .array(z.string())
+              .min(1)
+              .describe("External user IDs to send to"),
+          }),
+          approval: externalSendApproval(),
+          async execute({ campaign_id, user_ids }) {
+            try {
+              await braze.sendCampaign(campaign_id, user_ids)
+              return {
+                success: true as const,
+                message: `Triggered ${campaign_id} for ${user_ids.length} users`,
+              }
+            } catch (error) {
+              return fail(error, "Failed to trigger campaign")
+            }
+          },
+        }),
       }
     },
-  }),
-}
+  },
+})
 ```
 
-### `src/lib/integrations/weather/index.ts`
+Then confirm it landed:
 
-```typescript
-import type { Integration } from '../types'
-import { weatherTools } from './tools'
-
-export const weatherIntegration: Integration = {
-  name: 'Weather',
-  description: 'Real-time weather and forecasts',
-  capabilities: [
-    'Get current weather for major cities',
-    'Check temperature and conditions',
-  ],
-  examples: [
-    'What\'s the weather in New York?',
-    'Is it raining in London?',
-  ],
-  isConfigured: () => !!process.env.WEATHER_API_KEY,
-  getTools: () => weatherTools,
-}
-```
-
-## Common Patterns
-
-### Authentication
-
-**API Key in header:**
-```typescript
-headers: { 'Authorization': `Bearer ${API_KEY}` }
-```
-
-**API Key in URL:**
-```typescript
-const url = new URL('https://api.service.com/endpoint')
-url.searchParams.append('key', API_KEY)
-```
-
-**OAuth tokens:**
-```typescript
-headers: {
-  'Authorization': `Bearer ${ACCESS_TOKEN}`,
-}
-```
-
-### Error Handling
-
-Always return structured results:
-
-```typescript
-execute: async (input) => {
-  try {
-    const data = await client.fetchData(input)
-    return {
-      success: true as const,
-      data,
-      message: 'Successfully fetched data',
-    }
-  } catch (error) {
-    console.error('Tool error:', error)
-    return {
-      success: false as const,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    }
-  }
-}
-```
-
-### Multiple Tools
-
-You can have many tools in one integration:
-
-```typescript
-export const myserviceTools = {
-  getThing: tool({ ... }),
-  createThing: tool({ ... }),
-  deleteThing: tool({ ... }),
-  listThings: tool({ ... }),
-}
-```
-
-## Debugging
-
-**Check if integration is loaded:**
 ```bash
-npm run cli
+npm run agent:info
 ```
 
-Type:
-```
-list my capabilities
-```
+---
 
-If your integration appears, it's loaded.
+## Rules that matter
 
-**Enable verbose logging:**
-```typescript
-console.log('[MyService] Action:', action)
-```
+**Pick the right approval policy.** They are in `agent/lib/approval.ts` and the
+choice is not cosmetic:
 
-Then check logs when testing.
+| Policy | Use for |
+| --- | --- |
+| none | Reads. Anything that cannot change state. |
+| `writeApproval()` | Ordinary single-record writes. |
+| `bulkApproval(countFn)` | Anything touching a list. Pass a function that pulls the count out of your input shape, so the size limits apply. |
+| `deleteApproval()` | Deletions. Always a human, never from a schedule. |
+| `externalSendApproval()` | Anything reaching real people — email, SMS, push, a published page. |
+| `spendApproval()` + `requireSpendApprover(ctx)` | Anything that moves money. Both halves: the gate, and the check at the moment of effect. |
 
-## Best Practices
+Omitting `approval` means the tool runs unattended. That is correct for reads and
+wrong for everything else.
 
-1. **Check env vars early** — Fail fast if configuration is missing
-2. **Return clear errors** — Users need to know what went wrong
-3. **Use proper types** — TypeScript catches bugs
-4. **Document capabilities** — Help the AI understand what it can do
-5. **Test before deploying** — Use `npm run cli` locally
-6. **Never fabricate data** — Return real results or fail with an error
-7. **Handle rate limits** — If your API has limits, add retries or caching
-8. **Be specific with descriptions** — Help the AI understand when to use each tool
+**Never throw from `execute`.** Return `{ success: false, error }`. A thrown error
+becomes a failed tool call the model cannot explain; a returned error is something
+it can report or work around. Include the API's own message.
 
-## Next Steps
+**Write descriptions for the model, not for a human reader.** The description is
+the only thing standing between it and the wrong tool. Say when to use it, what
+to call first, what the common mistake is. Look at
+`agent/tools/salesforce.ts` — the `query_salesforce` description tells the model
+to describe the object first, because a guessed field name is the top cause of
+failure.
 
-1. Test your integration locally with `npm run cli`
-2. Deploy to Vercel
-3. Test in Slack
-4. Add documentation in your repo's README
-5. Share with your team!
+**Use snake_case for tool and parameter names.** It matches the built-ins and the
+rest of this repo.
+
+**Keep `execute` inline.** In a `defineDynamic` file, `execute` must be written
+inline as shown. `execute: myHandler` works on the first step and then breaks when
+the runtime replays it after a pause.
+
+**Return paths, not payloads.** If a tool can produce a lot of rows, write them to
+`/workspace` with `writeCsvToWorkspace` and return the path. The Slack channel
+attaches the file automatically, and the model reasons about a summary instead of
+burning context. `agent/tools/salesforce.ts` `export_salesforce_query` is the
+reference.
+
+**Shape what the model sees** with `toModelOutput` when a tool returns something
+rich the channel needs but the model does not.
+
+## Also worth doing
+
+- Add the variables to `.env.example` with a comment saying what they do.
+- Write `docs/setup-<service>.md` and link it from `setupGuide`.
+- Add an eval under `evals/` for the one behavior you care about.
+- Add a skill in `agent/skills/` if the integration has a procedure worth
+  remembering — that is where "how we actually run a Braze send" belongs, not in
+  the tool description.

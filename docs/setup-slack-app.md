@@ -52,7 +52,7 @@ users:read.email
 2. Toggle **"Enable Events"** to ON
 3. In **"Request URL"**, enter your app's URL:
    - **Local development:** Not applicable (use proxy or skip this)
-   - **Deployed to Vercel:** `https://your-app.vercel.app/api/slack`
+   - **Deployed to Vercel:** `https://your-app.vercel.app/eve/v1/slack`
    - Replace `your-app` with your actual Vercel domain
 
 4. Once the URL is verified, scroll down to **"Subscribe to bot events"**
@@ -66,7 +66,7 @@ users:read.email
 2. Click **"Create New Command"**
 3. Fill in:
    - **Command:** `/moperator`
-   - **Request URL:** `https://your-app.vercel.app/api/slack/commands` (or your local dev URL)
+   - **Request URL:** `https://your-app.vercel.app/eve/v1/slack` (or your local dev URL)
    - **Short Description:** "mOperator AI assistant"
    - **Usage Hint:** `bug|feature|help <text>`
 4. Click **"Save"**
@@ -78,7 +78,7 @@ If you want to use the approval workflow for Salesforce write operations, you ne
 1. Click **"Interactivity & Shortcuts"** in the left sidebar
 2. Toggle **"Interactivity"** to ON
 3. In **"Request URL"**, enter:
-   - **Deployed to Vercel:** `https://your-app.vercel.app/api/slack/interactions`
+   - **Deployed to Vercel:** `https://your-app.vercel.app/eve/v1/slack`
    - Replace `your-app` with your actual Vercel domain
 4. Click **"Save Changes"**
 
@@ -143,7 +143,7 @@ SLACK_BOT_USER_ID=U12345678ABC
 
 ### "Can't use slash commands"
 - Confirm `/moperator` command was created in Slash Commands settings
-- Check that the Request URL points to `/api/slack/commands`
+- Check that the Request URL points to `/eve/v1/slack`
 - Reinstall the app to your workspace after making changes
 
 ## Approval Workflow

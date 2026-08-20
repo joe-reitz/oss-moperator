@@ -7,8 +7,8 @@
 
 import { NextRequest } from "next/server"
 import { AdminAuthError, requireAdmin } from "@/lib/admin-auth"
-import { queryAllRecords } from "@/lib/integrations/salesforce/client"
-import { validateReadOnlySoql } from "@/lib/soql-validator"
+import { queryAllRecords } from "@agent/lib/salesforce/client"
+import { validateReadOnlySoql } from "@agent/lib/soql"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 120

@@ -6,7 +6,7 @@ import {
   aggregateByUser,
   type Period,
   type StoredEvent,
-} from "@/lib/analytics"
+} from "@agent/lib/analytics"
 import { resolveSlackUserNames } from "@/lib/analytics-utils"
 import { AdminAuthError, requireAdmin } from "@/lib/admin-auth"
 

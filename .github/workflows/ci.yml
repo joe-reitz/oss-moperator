@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      # Confirms eve discovered every authored file and reports zero diagnostics.
+      # Catches a tool in the wrong directory or a malformed skill before any
+      # model is called, which is faster and cheaper than an eval.
+      - name: Agent discovery
+        run: npm run agent:info
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build the agent
+        run: npm run agent:build
+
+      # Verifies the deployment topology, not just that a build succeeds: the
+      # agent service must be registered and every schedule must land as a cron
+      # entry. A Vercel CLI older than 56.4.0 omits both silently.
+      - name: Verify Vercel build output
+        run: |
+          npx --yes vercel@latest build --yes
+          node --input-type=module -e "
+            import { readFileSync } from 'node:fs'
+            const c = JSON.parse(readFileSync('.vercel/output/config.json', 'utf8'))
+            const services = (c.services ?? []).map((s) => s.name)
+            const crons = c.crons ?? []
+            if (!services.includes('eve')) throw new Error('agent service missing from build output')
+            if (crons.length !== 3) throw new Error(\`expected 3 cron entries, got \${crons.length}\`)
+            console.log('services:', services, 'crons:', crons.length)
+          "
+
+  evals:
+    runs-on: ubuntu-latest
+    # Evals call a real model, so they need a credential. Skipped on forks, where
+    # secrets are unavailable — the checks above still run there.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      - name: Run evals
+        # --strict fails the build on a below-threshold soft assertion too, not
+        # just a hard gate.
+        run: npm run eval -- --strict
+        env:
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          # Deliberately no CRM credentials here. Integration evals skip
+          # themselves when unconfigured, so CI exercises the agent's own
+          # behavior without touching a real Salesforce org.

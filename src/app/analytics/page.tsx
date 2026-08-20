@@ -5,7 +5,7 @@ import {
   periodToDateRange,
   aggregateByDay,
   aggregateByUser,
-} from "@/lib/analytics"
+} from "@agent/lib/analytics"
 import { resolveSlackUserNames } from "@/lib/analytics-utils"
 import { AnalyticsDashboard } from "./charts"
 

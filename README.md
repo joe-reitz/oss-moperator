@@ -1,216 +1,205 @@
 # mOperator
 
-**Marketing Operations AI Agent** — A Slack bot that connects your marketing team to Salesforce, Linear, GitHub, and more using natural language.
+**A marketing operations agent you fork.** It lives in your Slack, works in your
+CRM, and every rule it follows is a file you can edit.
 
-Built with [Next.js](https://nextjs.org), [Vercel AI SDK](https://sdk.vercel.ai), and [Claude](https://anthropic.com/claude).
+Built on [eve](https://eve.dev), Vercel's framework for durable backend agents,
+and deployed as a single Next.js project.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fmoperator&env=AI_GATEWAY_API_KEY,AI_PROVIDER,SLACK_BOT_TOKEN&envDescription=Required%20environment%20variables&envLink=https%3A%2F%2Fgithub.com%2Fvercel%2Fmoperator%23environment-variables&project-name=moperator&repository-name=moperator)
-
----
-
-## What It Does
-
-mOperator is a Slack bot that lets marketing and sales teams interact with their tools using natural language:
-
-- **"Show me active campaigns"** → Queries Salesforce
-- **"Export contacts from Acme Corp as CSV"** → Runs SOQL, uploads CSV to Slack
-- **"Bug: dashboard spinner never stops"** → Files a Linear issue with AI-enriched title and description
-- **"What shipped this week?"** → Fetches GitHub commits and summarizes changes
-- **"Create a search campaign with $200/day budget"** → Creates a Google Ads campaign (with approval)
-- **"How are our Google Ads performing?"** → Pulls campaign metrics
-
-### Key Features
-
-- **Plug-and-play integrations** — Enable Salesforce, Linear, GitHub, Luma, and more just by adding env vars
-- **SOQL Console** — A browser playground at `/console` that turns natural-language prompts into SOQL, runs them safely (read-only), and exports CSV
-- **Analytics Dashboard** — A `/analytics` page that shows usage over time, top users, and most-used tools
-- **Audience Vocabulary** — A `/audience-vocab` admin UI that maps marketer-speak ("segment", "tier") to your org's canonical Salesforce fields — used by both the SOQL console and the Slack agent
-- **CSV export** — Query results automatically upload as Slack file attachments
-- **Thread context** — Follow-up questions remember the conversation
-- **Slash commands** — `/moperator bug`, `/moperator feature`, `/moperator help`, plus optional `/moperator connect-sfdc` for per-user Salesforce attribution
-- **Approval workflow** — Salesforce / HubSpot / Marketo write operations require approval for non-authorized users
-- **Ad spend safeguards** — Google Ads operations always require designated growth team approval
-- **Per-user Salesforce OAuth** — Each Slack user can connect their own SFDC account so writes show their identity in `CreatedById` (encrypted token storage, optional)
-- **Slack signature verification** — Every webhook is verified against your signing secret
-- **Model flexibility** — Switch between Claude and GPT-4o with one env var
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fmoperator&env=AI_GATEWAY_API_KEY,AUTHORIZED_USER_EMAILS,MOPERATOR_SESSION_SECRET&envDescription=Minimum%20to%20boot&envLink=https%3A%2F%2Fgithub.com%2Fvercel%2Fmoperator%23environment&project-name=moperator&repository-name=moperator)
 
 ---
 
-## Quick Start
+## What it does
 
-### 1. Clone and install
+```
+"Which campaigns had the worst cost per conversion last month?"
+  → pulls 90 days of ad performance, analyzes it in a sandbox, answers with
+    a table and says which differences are too small to be meaningful
+
+"Export every contact at Acme as a CSV"
+  → paginates the full result set, writes it to a file, attaches it
+
+"Add these 400 contacts to campaign 701xx000000ABCD"
+  → states the count, then waits for a human to approve before writing
+
+"Here's a list from the conference — dedupe it against Salesforce"
+  → reads the attachment, normalizes emails, finds the 388 you already have
+    and the 12 who unsubscribed, and recommends importing 642
+
+"Raise the brand campaign budget to $300/day"
+  → shows the current budget and the monthly delta, then requires a
+    designated ad-spend approver to sign off
+
+"Bug: the pricing form drops UTM parameters"
+  → files a Linear issue with a written title, body, priority, and labels
+```
+
+It reaches Salesforce, HubSpot, Marketo, Google Ads, Linear, GitHub, and Luma —
+whichever you configure — plus web search, a Linux sandbox, and its own
+CRM-safety rules.
+
+## Why fork it instead of buying it
+
+Marketing ops is not a generic problem. Your segment field is not their segment
+field, your naming convention is real, your approval chain is specific, and the
+five things your team asks for every week are not the five things another team
+asks for. A closed product has to average over all of that. A fork does not.
+
+Everything you would want to change is a file:
+
+| To change | Edit |
+| --- | --- |
+| Who can approve what, naming and UTM conventions, limits | `agent/lib/config.ts` |
+| How it talks and what it refuses | `agent/instructions/` |
+| Its playbooks for SOQL, audiences, launches, list hygiene | `agent/skills/` |
+| Which tools exist | `agent/tools/` — one file per integration |
+| What "segment" means in your org | `/audience-vocab`, no deploy needed |
+| Which writes need a human | `agent/lib/approval.ts` |
+| Scheduled digests | `agent/schedules/` |
+
+Delete an integration by deleting two paths. Add one with a client and a tool
+file. The agent's own prompt updates itself from what is configured.
+
+---
+
+## Quick start
 
 ```bash
 git clone https://github.com/vercel/moperator.git
 cd moperator
 npm install
-```
-
-### 2. Configure environment
-
-```bash
 cp .env.example .env.local
 ```
 
-At minimum, you need:
-- `AI_GATEWAY_API_KEY` — your [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) key
-- `SLACK_BOT_TOKEN` (see [Slack setup guide](docs/setup-slack-app.md))
-
-### 3. Enable integrations
-
-mOperator auto-discovers integrations based on env vars. Just add the keys for what you want:
-
-| Integration | Required Env Vars | Setup Guide |
-|-------------|-------------------|-------------|
-| Salesforce  | `SALESFORCE_ACCESS_TOKEN`, `SALESFORCE_INSTANCE_URL` | [docs/setup-salesforce.md](docs/setup-salesforce.md) |
-| Linear      | `LINEAR_API_KEY` | [docs/setup-linear.md](docs/setup-linear.md) |
-| GitHub      | `GITHUB_TOKEN`, `GITHUB_REPO` | [docs/setup-github.md](docs/setup-github.md) |
-| Google Ads  | `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID` | [docs/setup-google-ads.md](docs/setup-google-ads.md) |
-| Luma        | `LUMA_API_KEY` | Get the key from your Luma calendar settings |
-
-### 4. Run locally
+Set two things in `.env.local` and you have a working agent:
 
 ```bash
-npm run dev
+AI_GATEWAY_API_KEY=...        # https://vercel.com/docs/ai-gateway
+AUTHORIZED_USER_EMAILS=you@company.com
+MOPERATOR_SESSION_SECRET=...  # openssl rand -hex 32
 ```
 
-### 5. Deploy to Vercel
+Then pick how you want to talk to it:
 
 ```bash
-vercel deploy
+npm run agent   # terminal chat with the agent (fastest loop, no Slack needed)
+npm run dev     # the full app: site, /chat, /console, /analytics, docs
 ```
 
-Or click the Deploy button above.
+`npm run agent:info` prints exactly what the agent discovered — tools, skills,
+schedules, and which integrations are active. Run it whenever something is
+missing.
 
-See [docs/deploy-to-vercel.md](docs/deploy-to-vercel.md) for the full guide.
+### Add integrations
 
----
+Set the variables, restart. That is the whole step.
 
-## Production Deployment Checklist
+| Integration | Variables | Guide |
+| --- | --- | --- |
+| Salesforce | `SALESFORCE_ACCESS_TOKEN`, `SALESFORCE_INSTANCE_URL` | [docs](docs/setup-salesforce.md) |
+| HubSpot | `HUBSPOT_API_TOKEN` | [docs](docs/setup-hubspot.md) |
+| Marketo | `MARKETO_CLIENT_ID`, `MARKETO_CLIENT_SECRET`, `MARKETO_REST_ENDPOINT` | [docs](docs/setup-marketo.md) |
+| Google Ads | `GOOGLE_ADS_CLIENT_ID`, `..._SECRET`, `..._DEVELOPER_TOKEN`, `..._CUSTOMER_ID` | [docs](docs/setup-google-ads.md) |
+| Linear | `LINEAR_API_KEY` | [docs](docs/setup-linear.md) |
+| GitHub | `GITHUB_TOKEN`, `GITHUB_REPO` | [docs](docs/setup-github.md) |
+| Luma | `LUMA_API_KEY` | Key is in your Luma calendar settings |
 
-Before exposing mOperator beyond your local machine, work through this list. mOperator can query your CRM and write campaign data — treat its deployment like a production service. Full step-by-step instructions live in [docs/security.md](docs/security.md).
+The agent only sees tools for what is configured, so it never offers to do
+something this install cannot do.
 
-### Compute & network
-- [ ] Set `NEXT_PUBLIC_APP_URL` to your production domain (used by every OAuth callback)
-- [ ] If your org uses Vercel Secure Compute (or an equivalent isolated runtime), deploy mOperator into that compute group and scope its environment variables to that group only
-- [ ] If Salesforce has IP allowlisting (Setup → Network Access), add your Vercel function egress IPs to the allowlist
-- [ ] Confirm your Vercel project is on the right team — env vars are visible to all team members
-
-### Auth & secrets
-- [ ] Set `SLACK_SIGNING_SECRET` so every webhook is verified
-- [ ] Generate `MOPERATOR_SESSION_SECRET` (`openssl rand -hex 32`) — required for the admin pages (`/console`, `/analytics`, `/audience-vocab`)
-- [ ] Set `SLACK_CLIENT_ID` and `SLACK_CLIENT_SECRET` so users can sign in to admin pages
-- [ ] Populate `AUTHORIZED_USER_EMAILS` — this list gates the admin pages and also bypasses the Salesforce write approval flow
-- [ ] If you want per-user Salesforce attribution, generate `MOPERATOR_TOKEN_ENCRYPTION_KEY` (`openssl rand -hex 32`) and set `SFDC_USER_OAUTH_ENABLED=true`. See [docs/sfdc-per-user-oauth.md](docs/sfdc-per-user-oauth.md).
-
-### Salesforce hardening
-- [ ] Scope your Connected App to only the objects and fields mOperator needs
-- [ ] Register the per-user OAuth redirect URI in your Connected App: `{NEXT_PUBLIC_APP_URL}/api/integrations/salesforce/user-callback`
-- [ ] Choose Connected App authorization policy: "Admin pre-approved users only" is safer than "All users self-authorize"
-
-### Operational hygiene
-- [ ] Confirm Redis (`UPSTASH_REDIS_REST_URL`) is in a region near your Vercel deployment
-- [ ] Decide on analytics retention — events accumulate in `moperator:analytics:events` indefinitely; add a cleanup cron if it matters
-- [ ] Test in a Slack workspace with one user before sharing the bot link with the team
-
----
-
-## Architecture
-
-```
-CLI (npm run cli)     Slack (@mOperator)
-    |                      |
-    v                      v
-POST /api/agent      POST /api/slack
-    |                      |
-    +----------+-----------+
-               |
-               v
-    AI SDK (Claude / GPT-4o)
-               |
-               +-- Tools (auto-discovered):
-                   +-- Salesforce (if configured)
-                   +-- Linear (if configured)
-                   +-- GitHub (if configured)
-```
-
-### Integration Module System
-
-Each integration is a self-contained module in `src/lib/integrations/<name>/`:
-
-```typescript
-interface Integration {
-  name: string
-  description: string
-  capabilities: string[]
-  examples: string[]
-  isConfigured: () => boolean  // Checks env vars
-  getTools: () => Record<string, Tool>  // AI SDK tools
-}
-```
-
-The system prompt dynamically lists only active integrations. See [docs/adding-integrations.md](docs/adding-integrations.md) to add your own.
-
----
-
-## Environment Variables
-
-See [`.env.example`](.env.example) for the full list with descriptions.
-
-### Required
-
-| Variable | Description |
-|----------|-------------|
-| `AI_GATEWAY_API_KEY` | Your Vercel AI Gateway API key ([docs](https://vercel.com/docs/ai-gateway)) |
-| `AI_PROVIDER` | `"anthropic"` or `"openai"` (default: `anthropic`) |
-| `SLACK_BOT_TOKEN` | Slack Bot User OAuth Token (`xoxb-...`) |
-
-### Required for production (see [docs/security.md](docs/security.md))
-
-| Variable | Description |
-|----------|-------------|
-| `SLACK_SIGNING_SECRET` | Verifies every Slack webhook. Refuses requests without it in production. |
-| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | OAuth credentials for the admin sign-in flow (gates `/console`, `/analytics`, `/audience-vocab`) |
-| `MOPERATOR_SESSION_SECRET` | HMAC secret for admin session cookies. Generate: `openssl rand -hex 32` |
-| `AUTHORIZED_USER_EMAILS` | Comma-separated emails. Gates admin pages and bypasses approval workflow. |
-| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Required for approvals, saved queries, analytics, vocab. |
-
-### Optional
-
-| Variable | Description |
-|----------|-------------|
-| `AI_GATEWAY_URL` | Custom AI Gateway URL (default: `https://ai-gateway.vercel.sh`) |
-| `AI_MODEL` | Override the default model |
-| `BOT_NAME` | Customize the bot name (default: "mOperator") |
-| `SLACK_APPROVER_GROUP_ID` | Slack user group ID for @mentioning approvers (e.g., `S0123456789`) |
-| `SLACK_BOT_USER_ID` | Bot's Slack user ID (for thread history) |
-| `SFDC_USER_OAUTH_ENABLED` | Set `true` to enable per-user Salesforce OAuth. See [docs/sfdc-per-user-oauth.md](docs/sfdc-per-user-oauth.md). |
-| `MOPERATOR_TOKEN_ENCRYPTION_KEY` | AES-256-GCM key for per-user SFDC tokens. Required when the flag above is on. |
-| `LUMA_API_KEY` | Enables the Luma event creation tool. |
-
----
-
-## Adding Your Own Integration
-
-1. Create `src/lib/integrations/yourservice/`
-2. Add `client.ts` (API client), `tools.ts` (AI SDK tools), `index.ts` (module export)
-3. Register in `src/lib/integrations/index.ts`
-
-See [docs/adding-integrations.md](docs/adding-integrations.md) for the full guide with a template.
-
----
-
-## CLI
-
-For testing without Slack:
+### Add Slack
 
 ```bash
-npm run cli
+npx eve add channel/slack
 ```
 
-This connects to `POST /api/agent` on your local dev server.
+Choose Vercel Connect when asked. It manages the bot token, verifies inbound
+requests, handles rotation, and supports multiple workspaces without a Slack
+secret in your environment. Full walkthrough: [docs/setup-slack-app.md](docs/setup-slack-app.md).
+
+### Deploy
+
+```bash
+npx vercel deploy --prod
+```
+
+One project serves the site, the admin pages, and the agent.
+Schedules under `agent/schedules/` become Vercel Cron Jobs automatically.
+See [docs/deploy-to-vercel.md](docs/deploy-to-vercel.md).
 
 ---
+
+## How it keeps you out of trouble
+
+An agent with write access to your CRM and your ad budget needs real guardrails,
+not a polite prompt. These are enforced in code, in `agent/lib/approval.ts`:
+
+- **CRM writes** go through automatically for people on the approver list.
+  Everyone else's write pauses for one.
+- **Bulk writes** are reviewed above a threshold no matter who asks, and refused
+  outright above a hard cap. Splitting a batch to get under the limit does not
+  work — the cap is per call and the agent is told why.
+- **Deletions** and **anything that sends to real people** (a Marketo campaign,
+  a published event page) always need a human, and can never run from a schedule.
+- **Ad budget changes** always need a human, and specifically one on the ad-spend
+  approver list — checked again at the moment the change is applied, so the
+  person who asked cannot approve their own spend.
+- **Read-only means read-only.** The SOQL the agent runs is validated against
+  DML, statement stacking, and comment-hidden mutations. The `data-analyst`
+  subagent has no write tools in its tool set at all.
+
+A pause is durable. The turn suspends, Slack shows Approve / Deny, and the work
+resumes exactly where it stopped when someone answers — minutes or days later,
+across a redeploy. There is no expiry and nothing held in memory.
+
+## What's in the box
+
+**Browser chat** at `/chat` — same agent, same tools, same approval rules, no
+Slack setup required.
+
+**Sandbox analysis.** Query results go to a real filesystem as CSV and get
+analyzed with pandas, so answers come from the whole result set instead of the
+first fifty rows. Files people drop in Slack land in the same place.
+
+**Skills** — on-demand playbooks for SOQL authoring, audience building, data
+analysis, campaign launch, ads review, list hygiene, and event setup. Loaded only
+when relevant, so the base prompt stays small.
+
+**A read-only analyst subagent** for "go find out" work, with its own context and
+no ability to change anything.
+
+**Scheduled digests** — Monday campaign activity, daily ad-spend anomalies,
+Friday triage. Inert until you name a channel.
+
+**Tracking discipline** — UTM builder, UTM auditor, and campaign-name checker
+that enforce your conventions, because one `paid_social` among a thousand
+`paid-social` splits a channel in every report you will run this year.
+
+**SOQL console** at `/console`, **usage analytics** at `/analytics`, and an
+**audience vocabulary** at `/audience-vocab` that teaches the agent what your
+team means by "segment" or "tier" without a deploy.
+
+**Evals** — `npm run eval` boots the real agent and checks it, so you can verify
+your own fork rather than finding out in Slack.
+
+---
+
+## Docs
+
+| | |
+| --- | --- |
+| [Fork this](docs/fork-this.md) | Make it yours in an afternoon |
+| [Architecture](docs/architecture.md) | How the pieces fit |
+| [Adding integrations](docs/adding-integrations.md) | Add a service, with a template |
+| [More capabilities](docs/connections.md) | MCP servers and extensions worth adding |
+| [Security](docs/security.md) | Production checklist |
+| [Migrating from v1](MIGRATING.md) | If you ran the pre-eve version |
+
+## Environment
+
+See [`.env.example`](.env.example) — every variable, with what it does and
+whether you need it.
 
 ## License
 

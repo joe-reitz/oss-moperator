@@ -2,6 +2,33 @@
 
 This guide walks you through deploying mOperator to Vercel so your Slack bot is live 24/7. You have two options: click a button (easiest) or use the command line.
 
+One project serves everything — the marketing site, the docs, `/chat`, the admin
+pages, and the agent itself. `withEve()` in `next.config.ts` mounts the agent at
+`/eve/v1/*`, and every file in `agent/schedules/` becomes a Vercel Cron Job.
+
+## If you deploy from the command line: CLI 56.4.0 or later
+
+```bash
+npx vercel --version    # must be >= 56.4.0
+npm i -g vercel@latest
+```
+
+This matters for local `vercel build` specifically. An older CLI silently omits
+the agent's generated service and its cron entries from the build output — the
+build succeeds, then nothing at `/eve/v1/*` responds and no schedules fire.
+Deploys built on Vercel's own infrastructure (the button, or a Git push) are
+unaffected.
+
+To confirm a local build included them:
+
+```bash
+npx vercel build
+node -e "const c=require('./.vercel/output/config.json'); console.log(c.crons, c.services?.map(s => s.name))"
+```
+
+You should see a service named `eve` and one cron entry per file in
+`agent/schedules/`.
+
 ## Option 1: Deploy Button (Fastest)
 
 1. Go to the [mOperator GitHub README](https://github.com/vercel/moperator#quick-start)
@@ -20,7 +47,7 @@ That's it! Skip to **"Update URLs and Redeploy"** below.
 ### 1. Install Vercel CLI
 
 ```bash
-npm install -g vercel
+npm install -g vercel@latest
 ```
 
 Or use `npx` (no installation needed):
@@ -52,7 +79,7 @@ After deployment, set up environment variables in Vercel:
 3. Go to **Settings** → **Environment Variables**
 4. Add each variable:
    - `AI_GATEWAY_API_KEY` = (your [AI Gateway](https://vercel.com/docs/ai-gateway) key)
-   - `AI_PROVIDER` = `anthropic` (or `openai`)
+   - `AI_MODEL` = `anthropic/claude-opus-4.8` (optional; any AI Gateway model id)
    - `SLACK_BOT_TOKEN` = `xoxb-...`
    - Other integrations as needed (Salesforce, Linear, GitHub)
 
@@ -86,14 +113,14 @@ Now that you have a live URL, update your Slack and Salesforce configurations.
 3. Go to **"Event Subscriptions"**
 4. Update **Request URL** to:
    ```
-   https://your-vercel-domain.vercel.app/api/slack
+   https://your-vercel-domain.vercel.app/eve/v1/slack
    ```
 
 5. Go to **"Slash Commands"**
 6. Click **"/moperator"** to edit
 7. Update **Request URL** to:
    ```
-   https://your-vercel-domain.vercel.app/api/slack/commands
+   https://your-vercel-domain.vercel.app/eve/v1/slack
    ```
 
 8. Click **"Save"** on each

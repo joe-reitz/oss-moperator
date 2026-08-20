@@ -161,7 +161,6 @@ export async function queryIssues(input: QueryIssuesInput) {
   const client = getClient()
   const teamId = await getTeamId()
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const filter: any = {
     team: { id: { eq: teamId } },
   }

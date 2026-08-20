@@ -9,8 +9,13 @@
 import { NextRequest } from "next/server"
 import { generateText } from "ai"
 import { AdminAuthError, requireAdmin } from "@/lib/admin-auth"
-import { getAIModel } from "@/lib/ai"
-import { formatVocabularyForPrompt } from "@/lib/audience/vocabulary"
+import { formatVocabularyForPrompt } from "@agent/lib/vocabulary"
+
+/**
+ * Same Vercel AI Gateway routing as the agent, so the console and the Slack
+ * agent share one credential and one model choice.
+ */
+const SOQL_MODEL = process.env.AI_MODEL || "anthropic/claude-opus-4.8"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -61,7 +66,7 @@ export async function POST(req: NextRequest) {
     const system = SYSTEM_PROMPT.replace("{{VOCABULARY}}", vocabulary)
 
     const { text } = await generateText({
-      model: getAIModel(),
+      model: SOQL_MODEL,
       system,
       messages: [{ role: "user", content: prompt }],
     })

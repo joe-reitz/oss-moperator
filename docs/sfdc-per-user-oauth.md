@@ -1,146 +1,145 @@
-# Per-user Salesforce OAuth — Setup & Threat Model
+# Per-user Salesforce OAuth
 
-By default, mOperator runs every Salesforce action under a single shared service account. Every record it creates shows the service account in `CreatedById`, every update shows it in `LastModifiedById`. That's fine if you don't care about per-user attribution — but if you'd like audit trails to show the actual person who clicked the Slack button, this feature is for you.
+By default, mOperator writes to Salesforce as a single service account. Every
+record it touches shows that account in `CreatedById` and `LastModifiedById`, so
+your audit trail says "the bot did it" and nothing about who asked.
 
-**Status in this codebase:** complete and feature-flagged off (`SFDC_USER_OAUTH_ENABLED=false` by default). Flip it on once your Salesforce admin has registered the new redirect URI.
+Turn this on and each person signs in to their own Salesforce account instead. The
+audit trail names the human, and Salesforce's own field-level security, sharing
+rules, and profile permissions apply to that person rather than to a service user
+with broad access.
 
----
+## How it looks to a user
 
-## How it works (user-facing)
+1. Someone asks for a Salesforce write.
+2. The turn pauses and they get a private sign-in link — an ephemeral message in
+   Slack, an inline prompt in `/chat`.
+3. They sign in. The turn resumes exactly where it stopped and completes the write.
+4. They are not asked again. The stored grant lasts 90 days from last use.
 
-1. A team member runs `/moperator connect-sfdc` in Slack.
-2. mOperator replies with an ephemeral message containing a *Connect Salesforce* button. The link expires in 10 minutes and is single-use.
-3. The button goes to mOperator's server, which 302s the browser to Salesforce's standard OAuth consent screen.
-4. The user signs in with their Salesforce credentials (or SSO) and grants consent.
-5. Salesforce redirects back to mOperator, which exchanges the code for tokens, encrypts the refresh token, and stores it in Redis keyed by the user's Slack ID.
-6. mOperator posts a confirmation back into the Slack channel.
-7. From then on, when *that user* triggers a Salesforce action in Slack, mOperator uses their token. Records show `CreatedById = the user`. Anyone who hasn't connected falls back to the shared service account.
+Nothing about reads changes, and nothing about the approval flow changes — an
+approval and a sign-in can both be pending, and the user is asked to approve
+first, then sign in, never both twice.
 
-Two related slash commands:
+## What runs it
 
-- `/moperator sfdc-status` — show current connection details.
-- `/moperator disconnect-sfdc` — remove the stored token (forces reconnect next time).
+The agent runtime owns the flow: it mints the callback URL, suspends the turn
+durably at the sign-in prompt, resumes it after the redirect, and renders the
+challenge natively per channel. That is `agent/lib/salesforce/auth.ts`, about 200
+lines, and it replaced the PKCE helpers, OAuth state store, and three callback
+routes the previous version carried.
 
----
+It does not own storage. Refresh tokens live in `agent/lib/salesforce/token-store.ts`,
+encrypted with AES-256-GCM, keyed by principal, with a 90-day sliding expiry. You
+need Redis and an encryption key for that.
 
-## Setup (one time per deployment)
+## Setup
 
-### 1. Generate the encryption key
-
-```bash
-openssl rand -hex 32
-```
-
-Set it as `MOPERATOR_TOKEN_ENCRYPTION_KEY` in your environment. This key encrypts every refresh token at rest. **Treat it like a database password.** Losing it forces every user to reconnect.
-
-### 2. Add a redirect URI in Salesforce
-
-In your Salesforce Connected App settings:
-
-1. Setup → App Manager → mOperator → View.
-2. Click **Edit** in the OAuth Settings section.
-3. Under **Callback URL**, add a new line: `https://YOUR-DOMAIN/api/integrations/salesforce/user-callback`
-4. Confirm the existing service-account callback (`/api/integrations/salesforce/callback`) is still listed.
-5. Confirm the OAuth scopes include `api`, `refresh_token`, and `offline_access`.
-6. Save.
-
-### 3. Decide on the authorization policy
-
-In the same Connected App settings:
-
-- **Self-Authorized** — any Salesforce user with the OAuth scope can connect. Simpler but less controlled.
-- **Admin pre-approved** (recommended for production) — only users in a designated permission set can connect. Safer; lets you decide who's eligible.
-
-### 4. Set the feature flag
+### 1. Environment
 
 ```bash
 SFDC_USER_OAUTH_ENABLED=true
+
+# Your Connected App, same one the service account uses
+SALESFORCE_CLIENT_ID=
+SALESFORCE_CLIENT_SECRET=
+SALESFORCE_LOGIN_URL=https://login.salesforce.com
+
+# Encrypts stored refresh tokens. Generate: openssl rand -hex 32
+MOPERATOR_TOKEN_ENCRYPTION_KEY=
+
+# Required — grants are stored here
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
 ```
 
-Redeploy. The slash commands appear; existing flows continue to work.
+If Redis or the encryption key is missing, the agent logs a warning and falls back
+to the service account. It never silently loses the ability to work.
 
-### 5. Test with one user before sharing
+### 2. Register the redirect URI
 
-Have one team member run `/moperator connect-sfdc`, complete the flow, and verify their `/moperator sfdc-status` shows the connection. Try a Salesforce action — confirm `CreatedById` in Salesforce shows them, not the service account.
+The framework mints the callback URL, so read it rather than guessing. Run the
+agent locally, trigger a write, and copy the URL from the sign-in prompt:
 
----
+```bash
+npm run agent
+# then: "update the Description on Campaign 701xxx to 'test'"
+```
 
-## Token storage & encryption
+Add that URL to your Connected App under **Setup → App Manager → your app →
+Edit → Callback URL**. You will need both the local and the production form.
 
-**Storage key:** `moperator:sfdc-user-token:slack-user:<slackUserId>` in Upstash Redis. Value is JSON with the user's SFDC identity, instance URL, and **encrypted** refresh token. Plaintext refresh tokens never touch disk or logs.
+### 3. Connected App settings
 
-**Algorithm:** AES-256-GCM, fresh random 12-byte IV per encryption, 16-byte auth tag stored alongside ciphertext. Decryption fails closed if any byte is altered.
+- **Selected OAuth Scopes:** `api`, `refresh_token`, `offline_access`
+- **Require Secret for Web Server Flow:** on
+- **Permitted Users:** "Admin approved users are pre-authorized" is the safer
+  choice — then grant the profiles or permission sets that should be able to use
+  the agent. "All users may self-authorize" works but means anyone in the org can
+  bind their account.
+- **Refresh Token Policy:** "Refresh token is valid until revoked", or a fixed
+  window if your security team requires one. A shorter window means periodic
+  re-authorization, which the flow handles.
 
-**TTL:** records expire 90 days after last use. Each successful action refreshes the timer. Inactive users → token expires → forced reconnect, no manual cleanup.
+### 4. Verify
 
----
+Have one person trigger a write, complete the sign-in, and then check the record
+in Salesforce. `LastModifiedById` should be them, not the service account.
+
+## Who uses their own token
+
+| Caller | Credentials |
+| --- | --- |
+| A person in Slack or `/chat` who has signed in | Their own Salesforce account |
+| A person who has not signed in yet | They are prompted; the turn waits |
+| A scheduled run | The service account — there is nobody to prompt |
+| The `data-analyst` subagent | The service account; it is read-only |
+
+Scheduled runs deliberately do not attempt a sign-in. A cron job has no human to
+answer a prompt, so it would park forever.
+
+## Revoking
+
+**One person:** in Salesforce, **Setup → Connected Apps OAuth Usage → your app →
+User's Access → Revoke**. The next call fails its refresh and they are asked to
+sign in again.
+
+**Everyone:** rotate `MOPERATOR_TOKEN_ENCRYPTION_KEY`. Every stored grant becomes
+undecryptable, is treated as "not connected", and each person is re-prompted. This
+is the fastest way to invalidate the whole set.
+
+**Turning the feature off:** unset `SFDC_USER_OAUTH_ENABLED`. Writes go back to
+the service account immediately. Stored grants remain in Redis until their TTL
+expires; delete the `moperator:sfdc-user-token:*` keys if you want them gone now.
 
 ## Threat model
 
-| Concern | Mitigation |
-|---|---|
-| Stolen Redis snapshot | Refresh tokens encrypted with a key in env vars. Attacker needs both. |
-| Stolen env vars | Rotate `MOPERATOR_TOKEN_ENCRYPTION_KEY` — this voids all stored tokens, forcing every user to reconnect. |
-| User A completes user B's OAuth flow | The state nonce is server-side, single-use, keyed to the original Slack user who issued `/connect-sfdc`. SFDC's redirect cannot mint a token for a different Slack user. |
-| Phishing — attacker sends fake "click here to connect" Slack message | Real connect link goes to your mOperator domain. A lookalike attacker domain would still hit the real Salesforce consent screen, which lists "mOperator" as the requesting app. |
-| Replay of OAuth callback URL | State nonce is consumed (deleted) on first hit; second attempt returns "Connection link expired." |
-| Logging of secrets | Tokens are never logged (only `slackUserId` and `sfdcUsername`). |
+**What this improves.** Attribution is real. Salesforce's own permission model
+applies per person, so someone who cannot edit Opportunities cannot get the agent
+to edit one for them. Revocation is per person and immediate.
 
----
+**What it does not change.** The service account still exists and is still used
+for reads, schedules, and anyone who has not signed in — so scope it tightly
+regardless. A refresh token in Redis is a real credential: encrypted at rest, but
+someone with both your Redis credentials and `MOPERATOR_TOKEN_ENCRYPTION_KEY` can
+use it. Keep them in different places, and prefer a Vercel project whose
+environment variables are scoped to the people who need them.
 
-## Failure modes
+**What it does not do.** This is authentication, not authorization. Whether the
+agent *should* make a change is decided by the approval policies in
+`agent/lib/approval.ts`. Per-user OAuth answers "in whose name", not "should this
+happen at all" — you want both.
 
-- **Encryption key missing** → slash commands and callback fail with a clear "key not configured" error. Existing service-account flows are unaffected.
-- **Feature flag off** → slash commands return "not enabled." All flows use the service account exactly as before.
-- **User's token revoked** → API call returns `invalid_grant`. mOperator deletes the stored record automatically and tells the user to reconnect.
-- **Redis down** → connect/disconnect fail loud. Existing service-account fallbacks continue to work.
-- **Wrong redirect URI** → SFDC rejects the auth request with an OAuth error before tokens are minted. Surfaced on the callback page.
-
----
-
-## Required env vars
-
-| Variable | Required | Notes |
-|---|---|---|
-| `SFDC_USER_OAUTH_ENABLED` | yes (set to `true`) | Master feature flag. When unset, behavior is identical to a deployment without this feature. |
-| `MOPERATOR_TOKEN_ENCRYPTION_KEY` | yes when feature is on | 64-char hex string (32 bytes). Generate with `openssl rand -hex 32`. |
-| `NEXT_PUBLIC_APP_URL` | already required | Used to build the redirect URI. Must match what's registered in Salesforce. |
-| `SALESFORCE_CLIENT_ID` / `SALESFORCE_CLIENT_SECRET` | already required | Same Connected App credentials. |
-| `SALESFORCE_LOGIN_URL` | already required | `https://login.salesforce.com` for production. |
-
----
-
-## What's in scope right now
-
-This initial port ships the OAuth plumbing:
-
-- `/moperator connect-sfdc`, `/moperator disconnect-sfdc`, `/moperator sfdc-status` slash commands.
-- Encrypted Redis token store with 90-day TTL.
-- `connect` and `user-callback` HTTP routes.
-- `withSfdcRequest` in the Salesforce client accepts a `slackUserId` option to route through a per-user token.
-
-**What's NOT yet wired:** the actual Slack agent loop and existing Salesforce tools don't yet thread `slackUserId` through to `withSfdcRequest`. So even after a user connects, current Slack-driven writes still use the service account. The connect/disconnect flow works, the token store works, and you can use `slackUserId` in any new code you write — but threading it through every existing tool is a follow-up PR.
-
-If you want full per-user attribution today, you can add `opts: { slackUserId }` to each tool's `execute` callback and build the request context from `authContext.userId` in `src/app/api/slack/route.ts`. The plumbing is ready.
-
----
-
-## Files
+## Where the code is
 
 ```
-src/lib/integrations/salesforce/user-auth/
-├── crypto.ts          AES-256-GCM helpers
-├── store.ts           Encrypted per-user token store (Redis)
-├── oauth-state.ts     OAuth state nonce store (Redis, 10-min TTL, single-use)
-├── pkce.ts            PKCE code-verifier + challenge generator
-└── connection.ts      getConnectionForUser + Salesforce OAuth config
-
-src/app/api/integrations/salesforce/
-├── connect/route.ts        Validates nonce, 302s to Salesforce
-└── user-callback/route.ts  Consumes nonce, stores encrypted refresh token
-
-src/app/api/slack/commands/handlers/
-├── connectSfdc.ts
-├── disconnectSfdc.ts
-└── sfdcStatus.ts
+agent/lib/salesforce/auth.ts          the flow: getToken, start, complete
+agent/lib/salesforce/token-store.ts   encrypted grants in Redis, 90-day TTL
+agent/lib/salesforce/crypto.ts        AES-256-GCM with a per-value IV
+agent/lib/salesforce/client.ts        accepts injected credentials
 ```
+
+Every Salesforce tool calls `resolveSfdcCredentials(ctx)` and passes the result to
+the client. That function returns `null` — meaning "use the service account" —
+whenever the feature is off, the caller is not a person, or the store is not
+configured, which is why enabling this cannot break an install.

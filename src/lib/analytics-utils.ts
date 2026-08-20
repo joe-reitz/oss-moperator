@@ -1,5 +1,5 @@
-import type { StoredEvent } from "@/lib/analytics"
-import { getSlackUserInfo } from "@/lib/slack"
+import type { StoredEvent } from "@agent/lib/analytics"
+import { getSlackUserInfo } from "@/lib/slack-users"
 
 const SLACK_ID_PATTERN = /^U[A-Z0-9]{8,}$/
 

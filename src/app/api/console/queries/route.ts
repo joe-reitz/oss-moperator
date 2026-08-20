@@ -14,8 +14,8 @@
 
 import { NextRequest } from "next/server"
 import { AdminAuthError, requireAdmin } from "@/lib/admin-auth"
-import { getRedis } from "@/lib/redis"
-import { validateReadOnlySoql } from "@/lib/soql-validator"
+import { getRedis } from "@agent/lib/redis"
+import { validateReadOnlySoql } from "@agent/lib/soql"
 
 export const dynamic = "force-dynamic"
 

@@ -16,12 +16,12 @@ import {
   AUDIENCE_VOCABULARY,
   type VocabularyEntry,
   type AudienceObject,
-} from "@/lib/audience/vocabulary"
+} from "@agent/lib/vocabulary"
 import {
   listCustomVocabulary,
   saveCustomVocabularyEntry,
   deleteCustomVocabularyEntry,
-} from "@/lib/audience/vocabulary-store"
+} from "@agent/lib/vocabulary-store"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"

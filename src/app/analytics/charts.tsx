@@ -64,13 +64,11 @@ interface AnalyticsData {
   }>
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function DarkTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs shadow-xl">
       <p className="text-gray-400 mb-1">{label}</p>
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
       {payload.map((entry: any, i: number) => (
         <p key={i} style={{ color: entry.color }} className="font-medium">
           {formatEventType(entry.dataKey)}: {entry.value}

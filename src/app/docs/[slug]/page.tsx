@@ -4,19 +4,23 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 
 const DOCS = [
-  { slug: "deploy", file: "deploy-to-vercel.md", title: "Deploy to Vercel", step: "01" },
-  { slug: "ai-gateway", file: "setup-ai-gateway.md", title: "Set Up AI Gateway", step: "02" },
-  { slug: "slack", file: "setup-slack-app.md", title: "Create a Slack App", step: "03" },
-  { slug: "salesforce", file: "setup-salesforce.md", title: "Connect Salesforce", step: "04" },
-  { slug: "hubspot", file: "setup-hubspot.md", title: "Connect HubSpot", step: "05" },
-  { slug: "marketo", file: "setup-marketo.md", title: "Connect Marketo", step: "06" },
-  { slug: "project-management", file: "setup-linear.md", title: "Connect Project Management", step: "07" },
-  { slug: "github", file: "setup-github.md", title: "Connect GitHub", step: "08" },
-  { slug: "extending", file: "adding-integrations.md", title: "Adding Integrations", step: "09" },
-  { slug: "design-your-own", file: "design-your-own.md", title: "Design Your Own with AI", step: "10" },
-  { slug: "architecture", file: "architecture.md", title: "Architecture", step: "11" },
-  { slug: "security", file: "security.md", title: "Security Setup", step: "12" },
-  { slug: "sfdc-per-user-oauth", file: "sfdc-per-user-oauth.md", title: "Per-User Salesforce OAuth", step: "13" },
+  { slug: "fork-this", file: "fork-this.md", title: "Fork This", step: "01" },
+  { slug: "deploy", file: "deploy-to-vercel.md", title: "Deploy to Vercel", step: "02" },
+  { slug: "ai-gateway", file: "setup-ai-gateway.md", title: "Set Up AI Gateway", step: "03" },
+  { slug: "slack", file: "setup-slack-app.md", title: "Create a Slack App", step: "04" },
+  { slug: "salesforce", file: "setup-salesforce.md", title: "Connect Salesforce", step: "05" },
+  { slug: "hubspot", file: "setup-hubspot.md", title: "Connect HubSpot", step: "06" },
+  { slug: "marketo", file: "setup-marketo.md", title: "Connect Marketo", step: "07" },
+  { slug: "google-ads", file: "setup-google-ads.md", title: "Connect Google Ads", step: "08" },
+  { slug: "project-management", file: "setup-linear.md", title: "Connect Linear", step: "09" },
+  { slug: "github", file: "setup-github.md", title: "Connect GitHub", step: "10" },
+  { slug: "luma", file: "setup-luma.md", title: "Connect Luma", step: "11" },
+  { slug: "extending", file: "adding-integrations.md", title: "Adding Integrations", step: "12" },
+  { slug: "connections", file: "connections.md", title: "More Capabilities", step: "13" },
+  { slug: "design-your-own", file: "design-your-own.md", title: "Design Your Own with AI", step: "14" },
+  { slug: "architecture", file: "architecture.md", title: "Architecture", step: "15" },
+  { slug: "security", file: "security.md", title: "Security Setup", step: "16" },
+  { slug: "sfdc-per-user-oauth", file: "sfdc-per-user-oauth.md", title: "Per-User Salesforce OAuth", step: "17" },
 ]
 
 function markdownToHtml(md: string): string {

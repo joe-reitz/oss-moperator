@@ -12,7 +12,7 @@ import {
   verifySession,
 } from "@/lib/admin-auth"
 import { ADMIN_SIGNIN_STATE_COOKIE } from "@/lib/admin-signin-state"
-import { getAuthorizedEmails } from "@/lib/permissions"
+import { config } from "@agent/lib/config"
 
 const SLACK_TOKEN_URL = "https://slack.com/api/openid.connect.token"
 const SLACK_USERINFO_URL = "https://slack.com/api/openid.connect.userInfo"
@@ -109,7 +109,7 @@ export async function GET(request: Request) {
   }
 
   const email = userInfo.email.toLowerCase()
-  const allowed = getAuthorizedEmails().map((e) => e.toLowerCase())
+  const allowed = config.approvers.writes
 
   if (allowed.length === 0) {
     return signinErrorRedirect("not_configured", returnTo)
