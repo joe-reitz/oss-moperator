@@ -30,8 +30,12 @@ hand-made spreadsheet are never what you would guess.
 ## The checks, in order of how much damage they prevent
 
 1. **Email validity.** Missing, malformed, or obviously fake. Count each.
-2. **Normalize before comparing.** Lowercase and trim. Most "duplicates" are
-   casing and whitespace.
+2. **Normalize before comparing.** Lowercase and trim — most "duplicates" are
+   casing and whitespace. For the fields that fragment reporting rather than
+   duplicate rows — country spellings, job titles, company legal suffixes — run
+   `normalize_list`. It adds columns rather than overwriting, and its
+   *unrecognized* counts are the interesting output: they tell you what your
+   picklists are missing.
 3. **Duplicates within the file.** Report the count and keep the most complete
    record of each set, not the first.
 4. **Duplicates against the CRM.** `dedupe_list_against_salesforce` checks both

@@ -82,20 +82,21 @@ cannot access, an AI generation quota, or copy that tripped a content filter.
 
 ## QA before it ships
 
-Use `get_knak_asset_html`. It writes the HTML to the workspace and returns the
-links, so you can check the things that actually go wrong:
+`get_knak_asset_html` writes the HTML to the workspace; `qa_email` checks it.
+Run both — the checker covers untracked links, UTM casing that will split a
+channel, missing alt text, unreplaced merge tokens, placeholder copy, a missing
+unsubscribe link, and a subject that will truncate.
 
-- **Every link resolves and carries the right UTMs.** Use `parse_tracking_url` on
-  the returned links — a missing or inconsistent `utm_medium` is the single most
-  common defect, and it is invisible until reporting is wrong.
-- **Subject and preheader exist**, and the subject is not also rendered as a
-  heading inside the body.
-- **The copy matches what was approved.** Diff it against the request if you have
-  both.
-- **No placeholder text.** "Lorem ipsum" or an unreplaced token means generation
-  filled a gap it should have left alone.
+Treat its severities differently. **blocking** means do not send. **warning**
+means someone should look. **note** is informational.
 
-Report what you checked and what you found. Do not paste the HTML into the thread.
+Two things the checker cannot do for you:
+
+- **Confirm the copy matches what was approved.** Diff it against the request.
+- **Judge whether the email is any good.** It checks mechanics, not persuasion.
+
+Report what you checked as well as what you found, so "clean" means something.
+Do not paste the HTML into the thread.
 
 ## What not to do
 

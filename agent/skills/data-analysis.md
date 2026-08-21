@@ -64,6 +64,8 @@ wrong in the data, what you had to assume.
 If a person wants the underlying rows, write them to a CSV in `/workspace` and
 say so; the file gets attached to your reply.
 
-If a comparison is the point, compute the difference and say whether it is
-meaningful given the volume. Two campaigns at 2.1% and 2.4% on 400 clicks each
-are not distinguishable, and saying so is more useful than ranking them.
+If a comparison is the point, use `compare_rates` rather than eyeballing it. Two
+campaigns at 2.1% and 2.4% on 400 clicks each are not distinguishable, and the
+tool will say so with a p-value and the sample size that *would* settle it.
+Report its verdict as given — do not soften "not distinguishable" into "A is
+slightly ahead", which is the exact error it exists to prevent.
