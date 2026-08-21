@@ -66,107 +66,45 @@ Optional overrides:
 
 ---
 
-## Option B: Direct API Key
+## Option B: a provider key directly
 
-If you just want to get running with a single provider and don't need the flexibility of AI Gateway, you can plug in an API key directly.
+Not supported any more, and worth explaining rather than leaving you to discover
+it.
 
-### For Anthropic (Claude)
+`ANTHROPIC_API_KEY` and `OPENAI_API_KEY` used to work, because the agent imported
+`@ai-sdk/anthropic` and `@ai-sdk/openai` and branched on an `AI_PROVIDER`
+variable. That branching is gone: `agent/agent.ts` takes a single AI Gateway
+model id, so one credential reaches every model and switching providers is a
+string change.
 
-1. Go to [console.anthropic.com](https://console.anthropic.com)
-2. Sign up or log in
-3. Go to **"API Keys"** and create a new key
-4. Add to `.env.local`:
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxx
-# AI_MODEL=anthropic/claude-opus-4.8
-```
-
-### For OpenAI (GPT-4o)
-
-1. Go to [platform.openai.com](https://platform.openai.com)
-2. Sign up or log in
-3. Go to **"API Keys"** and create a new key
-4. Add to `.env.local`:
+If you specifically need to call a provider directly — an enterprise agreement,
+a model the gateway does not carry, a self-hosted endpoint — it is a small change
+rather than a supported flag:
 
 ```bash
-OPENAI_API_KEY=sk-xxxxxxxxxxxxx
-# AI_MODEL=openai/gpt-5.5
+npm install @ai-sdk/anthropic
 ```
 
-### Note
+```ts
+// agent/agent.ts
+import { anthropic } from "@ai-sdk/anthropic"
+import { defineAgent } from "eve"
 
-With direct keys, switching providers means getting a new API key from a different provider and updating your code/config. AI Gateway removes this friction — but either approach works.
+export default defineAgent({
+  model: anthropic("claude-opus-4-8"),
+})
+```
+
+Note the id format differs: a direct provider uses its own naming
+(`claude-opus-4-8`), while the gateway uses `anthropic/claude-opus-4.8`.
+
+Doing this gives up per-model routing, the shared spend view, and the OIDC option
+below, and you take on a provider key to store and rotate. It is the right call
+occasionally and the wrong default.
 
 ---
 
-## Test the Connection
-
-Start your app:
-
-```bash
-npm run dev
-```
-
-Test via CLI:
-
-```bash
-npm run agent
-```
-
-Type something like:
-
-```
-hello, are you working?
-```
-
-If you get a response, you're connected.
-
-## Choosing a Model
-
-mOperator defaults to these models:
-
-| Provider | Default Model | Good For |
-|---|---|---|
-| Anthropic | `claude-sonnet-4-5-20250929` | Tool use, structured data, long context |
-| OpenAI | `gpt-4o` | General purpose, fast responses |
-
-To override the model, set `AI_MODEL` in your `.env.local`:
-
-```bash
-AI_MODEL=claude-sonnet-4-5-20250929
-```
-
-## Troubleshooting
-
-### "No AI key configured"
-- Make sure you've set either `AI_GATEWAY_API_KEY` or `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`
-- Restart the dev server after changing env vars
-
-### "401 Unauthorized"
-- Verify your API key is correct (no extra spaces or line breaks)
-- For AI Gateway: check the token hasn't been revoked in Vercel settings
-- For direct keys: check the key is active in the provider's console
-
-### "Model not found"
-- Check `AI_MODEL` is a valid AI Gateway model id, e.g. `anthropic/claude-opus-4.8`
-- If using a custom `AI_MODEL`, verify the model name matches what the provider supports
-
-## Cost
-
-- **Vercel AI Gateway** itself is free — you pay for model usage
-- **Anthropic Claude**: ~$3 per million input tokens, ~$15 per million output tokens
-- **OpenAI GPT-4o**: ~$2.50 per million input tokens, ~$10 per million output tokens
-- Typical cost for a small team: $5–20/month depending on usage
-
-## Next Steps
-
-1. [Create a Slack App](/docs/slack) so your team can talk to mOperator
-2. Optionally connect [Salesforce](/docs/salesforce), [project management](/docs/project-management), or [GitHub](/docs/github)
-
----
-
-## Option B: no key at all (OIDC)
+## Option C: no key at all (OIDC)
 
 On Vercel you can skip the API key. Vercel mints a short-lived OIDC token scoped
 to your project, the AI Gateway accepts it, and the AI SDK picks it up
@@ -235,3 +173,72 @@ Two directions, same mechanism:
 
 Setting `AI_GATEWAY_API_KEY` has no effect on the inbound side, and removing
 `vercelOidc()` from the auth walk has no effect on model access.
+
+---
+
+## Test the Connection
+
+Start your app:
+
+```bash
+npm run dev
+```
+
+Test via CLI:
+
+```bash
+npm run agent
+```
+
+Type something like:
+
+```
+hello, are you working?
+```
+
+If you get a response, you're connected.
+
+## Choosing a Model
+
+mOperator defaults to these models:
+
+| Provider | Default Model | Good For |
+|---|---|---|
+| Anthropic | `claude-sonnet-4-5-20250929` | Tool use, structured data, long context |
+| OpenAI | `gpt-4o` | General purpose, fast responses |
+
+To override the model, set `AI_MODEL` in your `.env.local`:
+
+```bash
+AI_MODEL=claude-sonnet-4-5-20250929
+```
+
+## Troubleshooting
+
+### "No AI key configured"
+- Make sure you've set `AI_GATEWAY_API_KEY`, or that `vercel env pull` has put a
+  fresh `VERCEL_OIDC_TOKEN` in `.env.local` (it expires after 12 hours)
+- Run `npm run agent:doctor` — it reports which credential it found and whether
+  the gateway accepted it
+- Restart the dev server after changing env vars
+
+### "401 Unauthorized"
+- Verify your API key is correct (no extra spaces or line breaks)
+- For AI Gateway: check the token hasn't been revoked in Vercel settings
+- For direct keys: check the key is active in the provider's console
+
+### "Model not found"
+- Check `AI_MODEL` is a valid AI Gateway model id, e.g. `anthropic/claude-opus-4.8`
+- If using a custom `AI_MODEL`, verify the model name matches what the provider supports
+
+## Cost
+
+- **Vercel AI Gateway** itself is free — you pay for model usage
+- **Anthropic Claude**: ~$3 per million input tokens, ~$15 per million output tokens
+- **OpenAI GPT-4o**: ~$2.50 per million input tokens, ~$10 per million output tokens
+- Typical cost for a small team: $5–20/month depending on usage
+
+## Next Steps
+
+1. [Create a Slack App](/docs/slack) so your team can talk to mOperator
+2. Optionally connect [Salesforce](/docs/salesforce), [project management](/docs/project-management), or [GitHub](/docs/github)
