@@ -16,6 +16,7 @@
  * client, and a `agent/tools/<name>.ts` file. See docs/adding-integrations.md.
  */
 
+import { config } from "./config"
 import { trackerSummary } from "./trackers"
 
 export interface IntegrationManifest {
@@ -51,6 +52,7 @@ export const INTEGRATIONS: IntegrationManifest[] = [
       "Inspect object schemas before writing a query",
       "Add contacts to campaigns and manage campaign membership",
       "Create, update, and delete records; bulk-update up to the configured cap",
+      "Import a list: inspect it, dedupe against the CRM, then bulk-insert what is new",
       "Pull query results into the sandbox as CSV for analysis or export",
     ],
     examples: [
@@ -281,6 +283,16 @@ export function renderCapabilities(): string {
     if (entry.id === "tracker") {
       const summary = trackerSummary()
       if (summary) lines.push(summary, "")
+    }
+    if (entry.id === "salesforce") {
+      lines.push(
+        `This org imports people from a list as **${config.salesforce.importObject}s**` +
+          (config.salesforce.importObject === "Contact"
+            ? " — it does not use Leads, so a Contact needs an Account resolved before import."
+            : ".") +
+          "",
+        ""
+      )
     }
     for (const capability of entry.capabilities) lines.push(`- ${capability}`)
     lines.push("", "Things people ask for:")

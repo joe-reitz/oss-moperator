@@ -53,14 +53,22 @@ hand-made spreadsheet are never what you would guess.
 7. **Required fields.** Check before importing, not after 600 rows fail. Call
    `describe_salesforce_object` on the target and look at `required: true`.
 
+   **Which target?** Your instructions say whether this org imports strangers as
+   Leads or as Contacts. Use that unless the user overrides it — the two models
+   are not interchangeable, and the wrong one creates records their reports will
+   not find. If the org uses Contacts, ask how the Account should be resolved
+   (match by email domain, match by company name, or accept private Contacts)
+   before importing. Do not pick for them.
+
    The standard ones people trip over:
 
    - **Lead needs `LastName` AND `Company`.** `Company` is the one that gets
      forgotten, and a blank one fails the row. Set a fallback through `defaults`
      when the file genuinely lacks it.
-   - **Contact needs `LastName`.** An imported list of strangers should become
-     Leads, not Contacts — a Contact needs an Account, and guessing that from an
-     email domain creates duplicate Accounts.
+   - **Contact needs `LastName`**, and wants an `AccountId`. A Contact created
+     without one is a *private* Contact that most B2B reporting cannot see.
+     Note that Contact does **not** take `Company` — a Contact gets its company
+     through its Account, which is the real difference between the two models.
    - **`Email` is not required by Salesforce** but is required in practice; a
      record without one cannot be deduped, mailed, or matched later.
    - Your org will have its own required fields on top. That is what the describe

@@ -175,7 +175,7 @@ Report the numbers before importing anything. The new-rows file is what you pass
               .array(z.string())
               .optional()
               .describe(
-                'Objects to check against. Defaults to ["Lead", "Contact"], which is what you want almost always.'
+                `Objects to check against, in priority order. Defaults to this org's configured list: ${config.salesforce.dedupeObjects.join(", ")}.`
               ),
             suppression_fields: z
               .array(z.string())
@@ -203,7 +203,7 @@ Report the numbers before importing anything. The new-rows file is what you pass
               }
               const credentials = identity.kind === "user" ? identity.credentials : null
 
-              const targets = objects ?? ["Lead", "Contact"]
+              const targets = objects ?? [...config.salesforce.dedupeObjects]
               const emails = records
                 .map((record) => normalizeEmail(record[emailColumn]))
                 .filter((email) => email && EMAIL_PATTERN.test(email))
@@ -239,9 +239,10 @@ Report the numbers before importing anything. The new-rows file is what you pass
                 })
 
                 for (const [email, found] of matches) {
-                  // A Contact outranks a Lead: if someone is both, the Contact is
-                  // the record that matters.
-                  if (known.has(email) && objectName === "Lead") continue
+                  // First object in the configured priority order wins, so an
+                  // org that treats Leads as authoritative can say so rather
+                  // than having Contact hardcoded above it.
+                  if (known.has(email)) continue
                   const record = found[0]
                   known.set(email, {
                     object: objectName,
@@ -316,6 +317,12 @@ Report the numbers before importing anything. The new-rows file is what you pass
         create_salesforce_records: defineTool({
           description: `Insert many records into Salesforce in one operation. This is how you import a list.
 
+**This org imports strangers as ${config.salesforce.importObject}s.** Use that unless the user explicitly asks for something else — the two models are not interchangeable, and picking the wrong one creates records nobody's reports will find.${
+            config.salesforce.importObject === "Contact"
+              ? `\n\nBecause this org uses Contacts rather than Leads, a Contact wants an AccountId. One created without it is a "private" Contact that most B2B reporting cannot see. Before importing, ask how the Account should be resolved — match existing Accounts by email domain or company name, create missing ones, or accept private Contacts deliberately. Do not silently import without an Account.`
+              : `\n\nLeads need no Account, which is why they are the default. Note that Lead requires both LastName and Company — a blank Company fails the row, so set a fallback through \`defaults\` when the file lacks one.`
+          }
+
 Pass either \`records\` inline or a \`csv_path\` in the workspace — the path is the normal route after dedupe_list_against_salesforce, since it avoids putting thousands of rows through the conversation.
 
 \`field_map\` renames CSV columns to Salesforce API names ({"Work Email": "Email"}). Columns not in the map are passed through as-is, and columns beginning with an underscore are dropped, so the annotations dedupe adds do not leak into the CRM.
@@ -324,7 +331,11 @@ Before calling: state the object, the row count, and where the rows came from. C
 
 Partial success is normal and reported: good rows land, bad rows come back with reasons. Cap ${config.limits.bulkMax.toLocaleString()} per call.`,
           inputSchema: z.object({
-            object_name: z.string().describe("The object API name, e.g. Lead"),
+            object_name: z
+              .string()
+              .describe(
+                `The object API name. This org imports strangers as ${config.salesforce.importObject}.`
+              ),
             csv_path: z
               .string()
               .optional()

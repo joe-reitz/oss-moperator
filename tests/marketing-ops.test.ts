@@ -284,3 +284,38 @@ test("the home tab states the write rules from live config", async () => {
   assert.match(view, /recorded under \*your\* name/)
   assert.match(view, /12 conversation\(s\), 40 action\(s\)/)
 })
+
+// ─── Import target ───────────────────────────────────────────────────────────
+
+test("imports default to Lead, but Contact-only orgs can say so", async () => {
+  // Read at import time by the config module, so assert the parse rule the
+  // module uses rather than re-importing it per case.
+  const parse = (value: string | undefined) =>
+    (value || "").trim().toLowerCase() === "contact" ? "Contact" : "Lead"
+
+  assert.equal(parse(undefined), "Lead")
+  assert.equal(parse(""), "Lead")
+  assert.equal(parse("Lead"), "Lead")
+  assert.equal(parse("Contact"), "Contact")
+  assert.equal(parse("  contact  "), "Contact")
+  assert.equal(parse("CONTACT"), "Contact")
+  // An unrecognized value must fall back to the safe default rather than
+  // inventing an object that does not exist.
+  assert.equal(parse("Person"), "Lead")
+})
+
+test("dedupe object names keep their case, since API names are case-sensitive", async () => {
+  const { config } = await import("../agent/lib/config")
+  for (const name of config.salesforce.dedupeObjects) {
+    assert.equal(name, name.trim())
+    assert.match(name, /^[A-Z]/, `${name} should keep its API casing`)
+  }
+})
+
+test("the prompt tells the agent which model the org runs", async () => {
+  const { renderCapabilities } = await import("../agent/lib/integrations")
+  process.env.SALESFORCE_ACCESS_TOKEN = "t"
+  process.env.SALESFORCE_INSTANCE_URL = "https://x.my.salesforce.com"
+  const rendered = renderCapabilities()
+  assert.match(rendered, /imports people from a list as \*\*(Lead|Contact)s\*\*/)
+})

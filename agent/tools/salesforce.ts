@@ -301,7 +301,7 @@ Use it when someone asks "am I connected to Salesforce?", when a write was refus
               ctx.session.auth.current?.attributes ??
               {}) as { email?: string }
             const email = attributes.email
-            const mode = config.salesforceIdentity
+            const mode = config.salesforce.identity
 
             if (mode === "service") {
               return {

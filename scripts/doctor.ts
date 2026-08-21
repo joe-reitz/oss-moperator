@@ -237,7 +237,7 @@ async function checkSalesforce(): Promise<void> {
     const global = await sf.describeGlobal()
     const count = (global.sobjects as unknown[]).length
 
-    const mode = config.salesforceIdentity
+    const mode = config.salesforce.identity
     if (mode === "service") {
       return {
         status: "warn",

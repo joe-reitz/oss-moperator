@@ -29,7 +29,51 @@ Attachments land in the agent's workspace at `/workspace/attachments`. Add
 `files:write` too if you want the agent to attach the cleaned files back to the
 thread, which is worth having — it means the numbers it reports are reviewable.
 
-### 3. Write identity
+### 3. Lead or Contact?
+
+The one decision worth making before your first import.
+
+```bash
+MOPERATOR_IMPORT_OBJECT=Lead      # default
+MOPERATOR_IMPORT_OBJECT=Contact   # for orgs that do not use Leads
+```
+
+**Lead** is the default because it is the classic Salesforce model and a Lead
+stands alone — it needs no Account until someone converts it. If your team works
+a queue of unconverted people, this is you.
+
+**Contact** is right for the many orgs that never adopted Leads and run
+everything as Contacts under Accounts. Set it and the agent stops proposing
+Leads.
+
+That choice has one real consequence, and it is why this is not just a label:
+
+> A Contact wants an `AccountId`. One created without it is a *private* Contact,
+> which most B2B reporting cannot see. So in a contact-only org, an import
+> normally has to resolve the Account first — match existing ones by email domain
+> or company name, create the missing ones, or accept private Contacts
+> deliberately.
+
+The agent will ask rather than guess. It knows which model your org runs, because
+`MOPERATOR_IMPORT_OBJECT` is rendered into its instructions.
+
+You can also override per import — *"import these as Contacts"* — without
+changing configuration. The setting is the default, not a restriction.
+
+### Which objects get deduped against
+
+```bash
+MOPERATOR_DEDUPE_OBJECTS=Contact,Lead   # default, in priority order
+```
+
+Both by default regardless of the import target, because orgs migrate and legacy
+Leads outlive the decision to stop using them. First match wins, so put the
+object that "already exists" most authoritatively first.
+
+Narrow it only if you are certain — each object costs one chunked query pass per
+import.
+
+### 4. Write identity
 
 Imports create records, so they follow the same identity rule as every other
 write: the change is recorded under **the person who asked**, and if it cannot
@@ -39,7 +83,7 @@ sign-in. See [Salesforce write identity](sfdc-per-user-oauth.md).
 Scheduled runs cannot import, by design — there is nobody to attribute the
 records to.
 
-### 4. Check it before you need it
+### 5. Check it before you need it
 
 ```bash
 npm run agent:doctor
@@ -65,7 +109,9 @@ so the suppression step has something to catch.
 This is where imports actually fail. Salesforce's requirements are not obvious,
 and the error it returns names the field but not the fix.
 
-### Lead — what most of an imported list becomes
+Which table applies depends on `MOPERATOR_IMPORT_OBJECT` above.
+
+### Lead — the default import target
 
 | Field | Required | Notes |
 | --- | --- | --- |
@@ -76,17 +122,30 @@ and the error it returns names the field but not the fix.
 | `LeadSource` | No | Set it via `defaults`. Skipping it is why attribution reports have a large "unknown" bucket. |
 | `Status` | No | Defaults to your org's default lead status. |
 
-### Contact — for people who already have an Account
+### Contact — the target for contact-only orgs
 
 | Field | Required | Notes |
 | --- | --- | --- |
 | `LastName` | **Yes** | |
-| `AccountId` | No, but | Technically optional (a "private" Contact). In practice a Contact with no Account is invisible to most B2B reporting. |
-| `Email` | No, but | Same as Lead. |
+| `AccountId` | No, but | Technically optional — a Contact without one is a *private* Contact, which most B2B reporting cannot see. In practice this is the field that decides whether the import was useful. |
+| `Email` | No, but | Same as Lead: not Salesforce-required, required in practice. |
 
-An imported list of strangers should become **Leads**, not Contacts. Creating
-Contacts requires knowing which Account each person belongs to, and guessing that
-from an email domain is how you end up with duplicate Accounts.
+Note what is **not** here: `Company`. Contacts get their company through
+`AccountId`, which is the whole difference between the two models. A Lead carries
+its company as text and stands alone; a Contact points at a real Account record.
+
+**Resolving the Account** is therefore the work. Three defensible approaches:
+
+1. **Match by email domain.** Query Accounts for the domains in the file, map the
+   matches, and report the misses. Fastest, and wrong for anyone using a personal
+   address — which is why the free-mail count from `inspect_list` matters.
+2. **Match by company name**, using `normalize_list` to produce a comparison key
+   first so "Acme, Inc." and "Acme Inc" match. Better coverage, more false
+   positives.
+3. **Import as private Contacts deliberately**, and let a downstream matching
+   process attach them. Legitimate, but decide it rather than discovering it.
+
+Ask for whichever you want; the agent will not pick for you.
 
 ### CampaignMember — adding them to the campaign
 
@@ -175,7 +234,10 @@ A Contact outranks a Lead when someone is both.
 
 ### 4. Import the new ones
 
-> Import the new ones as Leads, source Conference
+> Import the new ones, source Conference
+
+The agent uses the configured target. Say *"as Contacts"* or *"as Leads"* to
+override for one import.
 
 ```
 create_salesforce_records
@@ -219,8 +281,9 @@ call and the agent is told why.
 
 ## When it goes wrong
 
-- **"Required fields are missing: [Company]"** — the classic. Add
-  `defaults: { "Company": "Unknown" }`, or map a column to it.
+- **"Required fields are missing: [Company]"** — the classic, and Lead-only. Add
+  `defaults: { "Company": "Unknown" }`, or map a column to it. If you see this
+  while importing Contacts, something is targeting Lead that should not be.
 - **"Required fields are missing: [LastName]"** — the file has one "Name" column.
   Split it before importing.
 - **Every row failed with the same message** — that is a schema or validation
@@ -231,7 +294,12 @@ call and the agent is told why.
   campaign. Query `CampaignMemberStatus`.
 - **Duplicates got created anyway** — Salesforce duplicate rules run on the UI,
   not necessarily on the API. The dedupe step is what prevents this, so do not
-  skip it.
+  skip it. Also check `MOPERATOR_DEDUPE_OBJECTS`: if you narrowed it and the
+  person existed as the object you excluded, they were genuinely new as far as
+  the check could tell.
+- **Contacts imported but reports cannot see them** — they were created without
+  an `AccountId`, so they are private Contacts. Resolve the Account and update
+  them; see the Contact table above.
 - **The file will not read** — the agent looks in `/workspace/attachments`. If it
   cannot find it, the Slack app is probably missing `files:read`.
 

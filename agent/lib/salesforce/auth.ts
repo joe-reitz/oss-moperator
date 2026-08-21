@@ -252,7 +252,7 @@ function setupProblem(): string | null {
  * agent cannot surface a record someone could not open themselves.
  */
 export async function resolveSfdcRead(ctx: ToolContext): Promise<SfdcIdentity> {
-  if (config.salesforceIdentity !== "user-all") return { kind: "service" }
+  if (config.salesforce.identity !== "user-all") return { kind: "service" }
   return resolveUserIdentity(ctx, "read")
 }
 
@@ -265,7 +265,7 @@ export async function resolveSfdcRead(ctx: ToolContext): Promise<SfdcIdentity> {
  * prevent.
  */
 export async function resolveSfdcWrite(ctx: ToolContext): Promise<SfdcIdentity> {
-  if (config.salesforceIdentity === "service") return { kind: "service" }
+  if (config.salesforce.identity === "service") return { kind: "service" }
   return resolveUserIdentity(ctx, "write")
 }
 
@@ -278,7 +278,7 @@ async function resolveUserIdentity(
     return {
       kind: "refused",
       reason:
-        `Salesforce is set to per-user identity (SFDC_IDENTITY=${config.salesforceIdentity}) but ${problem}. ` +
+        `Salesforce is set to per-user identity (SFDC_IDENTITY=${config.salesforce.identity}) but ${problem}. ` +
         "Fix the configuration, or set SFDC_IDENTITY=service to accept that every change is recorded as the service account.",
     }
   }

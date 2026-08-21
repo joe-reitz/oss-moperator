@@ -17,6 +17,15 @@ function csv(value: string | undefined): string[] {
     .filter(Boolean)
 }
 
+/** Split a comma list, preserving case — API names are case-sensitive. */
+function csvRaw(value: string | undefined): string[] {
+  if (!value) return []
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+}
+
 function num(value: string | undefined, fallback: number): number {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
@@ -79,35 +88,71 @@ export const config = {
     adBudgetWarnUsd: num(process.env.MOPERATOR_AD_BUDGET_WARN_USD, 500),
   },
 
-  /**
-   * Salesforce write identity — who the CRM records as having made a change.
-   *
-   * This is an audit decision, not a convenience one. Salesforce already has a
-   * first-class audit trail (CreatedById, LastModifiedById, Field History
-   * Tracking, Setup Audit Trail), and it is authoritative, queryable, and
-   * already inside your compliance regime. The only way to make it *mean*
-   * anything for agent-driven changes is for each person's writes to carry
-   * their own Salesforce identity.
-   *
-   * So the default is `user`: a write is attributed to the person who asked for
-   * it, and if it cannot be, it does not happen. Falling back to a shared
-   * service account silently would produce exactly the audit trail you think
-   * you have and do not.
-   *
-   *   "user"      writes require the requester's own Salesforce identity;
-   *               reads use the service account (no attribution value, and
-   *               nobody should sign in just to ask a question)
-   *   "user-all"  reads too, so Salesforce sharing rules and field-level
-   *               security apply per person — the agent cannot show someone
-   *               records they could not open themselves
-   *   "service"   everything uses the shared service account. Explicit opt-out;
-   *               every change reads as having been made by the bot.
-   */
-  salesforceIdentity: (["user", "user-all", "service"] as const).includes(
-    (process.env.SFDC_IDENTITY || "") as "user" | "user-all" | "service"
-  )
-    ? (process.env.SFDC_IDENTITY as "user" | "user-all" | "service")
-    : "user",
+  salesforce: {
+    /**
+     * Who the CRM records as having made a change.
+     *
+     * This is an audit decision, not a convenience one. Salesforce already has a
+     * first-class audit trail (CreatedById, LastModifiedById, Field History
+     * Tracking, Setup Audit Trail), and it is authoritative, queryable, and
+     * already inside your compliance regime. The only way to make it *mean*
+     * anything for agent-driven changes is for each person's writes to carry
+     * their own Salesforce identity.
+     *
+     * So the default is `user`: a write is attributed to the person who asked
+     * for it, and if it cannot be, it does not happen. Falling back to a shared
+     * service account silently would produce exactly the audit trail you think
+     * you have and do not.
+     *
+     *   "user"      writes require the requester's own Salesforce identity;
+     *               reads use the service account, so nobody signs in to ask a
+     *               question
+     *   "user-all"  reads too, so Salesforce sharing rules and field-level
+     *               security apply per person — the agent cannot show someone
+     *               records they could not open themselves
+     *   "service"   everything uses the shared service account. Explicit
+     *               opt-out; every change reads as having been made by the bot.
+     */
+    identity: (["user", "user-all", "service"] as const).includes(
+      (process.env.SFDC_IDENTITY || "") as "user" | "user-all" | "service"
+    )
+      ? (process.env.SFDC_IDENTITY as "user" | "user-all" | "service")
+      : "user",
+
+    /**
+     * What a stranger from an imported list becomes: a Lead or a Contact.
+     *
+     * `Lead` is the default because it is the classic Salesforce model and it
+     * needs no Account — a Lead stands alone until someone converts it.
+     *
+     * Plenty of orgs do not use Leads at all, though, running everything as
+     * Contacts under Accounts. Set `MOPERATOR_IMPORT_OBJECT=Contact` for those,
+     * and note the consequence: a Contact wants an `AccountId`, and one created
+     * without it is a "private" Contact that most B2B reporting cannot see. In
+     * a contact-only org the import usually needs to match or create the Account
+     * first, which is a decision for a person rather than a default.
+     *
+     * This sets the default and tells the agent which model your org runs. The
+     * import tool still accepts an explicit object, so a one-off is possible
+     * without changing configuration.
+     */
+    importObject:
+      (process.env.MOPERATOR_IMPORT_OBJECT || "").trim().toLowerCase() === "contact"
+        ? "Contact"
+        : "Lead",
+
+    /**
+     * Objects a list is deduped against, in priority order — the first match
+     * wins, so put the object that "already exists" most authoritatively first.
+     *
+     * Defaults to both regardless of `importObject`, because orgs migrate and
+     * legacy Leads outlive the decision to stop using them. Narrow it if you are
+     * certain: each object costs one chunked query pass per import.
+     */
+    dedupeObjects: csvRaw(process.env.MOPERATOR_DEDUPE_OBJECTS).length
+      ? csvRaw(process.env.MOPERATOR_DEDUPE_OBJECTS)
+      : ["Contact", "Lead"],
+  },
 
   /**
    * Knak, the on-brand email builder. Only the naming convention lives here;
