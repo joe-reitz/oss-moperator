@@ -163,3 +163,75 @@ AI_MODEL=claude-sonnet-4-5-20250929
 
 1. [Create a Slack App](/docs/slack) so your team can talk to mOperator
 2. Optionally connect [Salesforce](/docs/salesforce), [project management](/docs/project-management), or [GitHub](/docs/github)
+
+---
+
+## Option B: no key at all (OIDC)
+
+On Vercel you can skip the API key. Vercel mints a short-lived OIDC token scoped
+to your project, the AI Gateway accepts it, and the AI SDK picks it up
+automatically. Nothing to store, nothing to rotate, and nothing that keeps
+working after someone leaves the team.
+
+### In production and preview: nothing to add
+
+It is automatic for a deployed, linked project. Do not create an env var called
+`VERCEL_OIDC_TOKEN` — Vercel injects it, and a stale hand-written one would
+override the live token and start failing after two hours.
+
+Deploy with no AI credential and try a real turn. If it works, you are done. If
+it 401s, fall back to an API key — one command, and the two are interchangeable:
+
+```bash
+vercel env add AI_GATEWAY_API_KEY production
+```
+
+Under the hood the token reaches a Vercel Function as an `x-vercel-oidc-token`
+header rather than an environment variable. Vercel reuses one for up to 90
+minutes against a two-hour TTL, so the spare 30 minutes covers a long-running
+function. That is a detail the SDK handles; it matters only if you are reading
+the token yourself.
+
+### Locally: pull it, and know it expires
+
+```bash
+vercel link        # or: npx eve link
+vercel env pull    # writes VERCEL_OIDC_TOKEN into .env.local
+```
+
+**The token is valid for 12 hours.** When it expires the agent starts failing to
+reach the model, which looks like a broken install rather than an expired
+credential. Re-run `vercel env pull`.
+
+`npx eve link` does the link and the pull in one step.
+
+### Which to use where
+
+For a personal or team install, the combination worth defaulting to:
+
+| Where | Use | Why |
+| --- | --- | --- |
+| Production | OIDC (nothing to set) | no secret to store, rotate, or leak |
+| Local development | `AI_GATEWAY_API_KEY` in `.env.local` | never expires — no 12-hour cliff mid-afternoon |
+| CI | `AI_GATEWAY_API_KEY` as a secret | no linked project to mint a token |
+
+The 12-hour expiry is the whole argument for a key locally. An API key that never
+expires beats re-running a command every morning to work out why the agent
+stopped answering.
+
+`npm run agent:doctor` reports which credential it found and whether the gateway
+accepted it.
+
+### Not the same as the agent's route auth
+
+Confusingly, this repo uses Vercel OIDC for a second, unrelated purpose. In
+`agent/channels/eve.ts`, `vercelOidc()` verifies **inbound** requests — it is how
+schedules, subagents, and the eve CLI authenticate *to* the agent's own routes.
+
+Two directions, same mechanism:
+
+- **Outbound** (this page): the agent proving who it is to the AI Gateway.
+- **Inbound** (`agent/channels/eve.ts`): callers proving who they are to the agent.
+
+Setting `AI_GATEWAY_API_KEY` has no effect on the inbound side, and removing
+`vercelOidc()` from the auth walk has no effect on model access.
