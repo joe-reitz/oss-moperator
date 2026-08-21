@@ -8,7 +8,18 @@ Every scope and event here is required by something in `agent/channels/slack.ts`
 The table below says which, so you can remove what you do not want rather than
 guessing.
 
-## Replace before pasting
+## Fill it in with one command
+
+```bash
+npm run slack:manifest -- https://your-app.vercel.app
+npm run slack:manifest -- your-app.vercel.app --yaml
+```
+
+Prints the manifest with all three URLs substituted, ready to paste. It rejects
+`localhost`, since Slack cannot reach it — tunnel first (`ngrok http 3000`) and
+pass the tunnel host.
+
+## Or replace by hand
 
 | Placeholder | Becomes |
 | --- | --- |

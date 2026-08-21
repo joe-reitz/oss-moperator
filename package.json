@@ -13,7 +13,8 @@
     "agent:doctor": "tsx scripts/doctor.ts",
     "agent:build": "eve build",
     "eval": "eve eval",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "slack:manifest": "tsx scripts/slack-manifest.ts"
   },
   "dependencies": {
     "@linear/sdk": "^73.0.0",
