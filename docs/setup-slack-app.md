@@ -1,5 +1,15 @@
 # Setting Up the Slack App
 
+> **Shortcut:** [`docs/slack/manifest.json`](slack/manifest.json) is a ready app
+> manifest with every scope and event this agent needs. Paste it into
+> **api.slack.com/apps → Create New App → From a manifest**, replace
+> `YOUR-DOMAIN` in three places, and skip most of this page.
+> [What each scope is for](slack/README.md).
+>
+> Or skip Slack app config entirely with `npx eve add channel/slack` and Vercel
+> Connect, which manages the app, the token, and verification for you.
+
+
 This guide walks you through creating a Slack app and connecting it to mOperator. Even if you're not a developer, you can complete these steps by following along carefully.
 
 ## Step 1: Create the Slack App

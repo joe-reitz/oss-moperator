@@ -1,0 +1,63 @@
+{
+  "display_information": {
+    "name": "mOperator",
+    "description": "Marketing operations agent. Ask about campaigns, contacts, ad spend, and lists.",
+    "background_color": "#000000"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "moperator",
+      "always_online": false
+    },
+    "app_home": {
+      "home_tab_enabled": true,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    }
+  },
+  "oauth_config": {
+    "redirect_urls": [
+      "https://YOUR-DOMAIN/api/admin/signin/callback"
+    ],
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "chat:write",
+        "im:history",
+        "im:write",
+        "channels:history",
+        "groups:history",
+        "users:read",
+        "users:read.email",
+        "files:read",
+        "files:write",
+        "reactions:read"
+      ],
+      "user": [
+        "openid",
+        "email",
+        "profile"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://YOUR-DOMAIN/eve/v1/slack",
+      "bot_events": [
+        "app_mention",
+        "message.im",
+        "message.channels",
+        "message.groups",
+        "app_home_opened",
+        "reaction_added"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://YOUR-DOMAIN/eve/v1/slack"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}
