@@ -76,13 +76,25 @@ npm install
 cp .env.example .env.local
 ```
 
-Set two things in `.env.local` and you have a working agent:
+Set three things in `.env.local` and you have a working agent:
 
 ```bash
 AI_GATEWAY_API_KEY=...        # https://vercel.com/docs/ai-gateway
 AUTHORIZED_USER_EMAILS=you@company.com
 MOPERATOR_SESSION_SECRET=...  # openssl rand -hex 32
 ```
+
+Or skip the model key entirely, if you deploy on Vercel — link the project and
+run through it, and a short-lived OIDC token is issued per run with nothing
+written to disk:
+
+```bash
+vercel link
+vercel env run -- npm run agent
+```
+
+In production it is fully automatic; there is nothing to set. See
+[Set up AI Gateway](docs/setup-ai-gateway.md).
 
 Then pick how you want to talk to it:
 

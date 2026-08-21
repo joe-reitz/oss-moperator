@@ -130,35 +130,62 @@ minutes against a two-hour TTL, so the spare 30 minutes covers a long-running
 function. That is a detail the SDK handles; it matters only if you are reading
 the token yourself.
 
-### Locally: pull it, and know it expires
+### Locally: run the command through Vercel
 
 ```bash
-vercel link        # or: npx eve link
-vercel env pull    # writes VERCEL_OIDC_TOKEN into .env.local
+vercel link                            # once
+vercel env run -- npm run agent        # fresh token, nothing written to disk
+vercel env run -- npm run dev
 ```
 
-**The token is valid for 12 hours.** When it expires the agent starts failing to
-reach the model, which looks like a broken install rather than an expired
-credential. Re-run `vercel env pull`.
+`vercel env run` fetches your development environment variables and a fresh OIDC
+token from the linked project, passes them to the command, and writes nothing to
+the filesystem. That is the whole point: no credential on disk to leak, and no
+expiry to think about, because you get a new token every time you start.
 
-`npx eve link` does the link and the pull in one step.
+The alternative writes them to a file:
 
-### Which to use where
+```bash
+vercel env pull    # writes .env.local
+```
 
-For a personal or team install, the combination worth defaulting to:
+Two reasons to prefer `env run`:
 
-| Where | Use | Why |
+- **The pulled token expires after 12 hours.** When it does, the agent stops
+  reaching the model in a way that looks like a broken install rather than an
+  expired credential.
+- **`env pull` overwrites `.env.local` wholesale.** Any local-only variable you
+  hand-added that does not exist in Vercel is gone. It prompts first; `--yes`
+  skips the prompt, which is how people lose a file.
+
+Use `env pull` when a tool needs a real file and cannot be wrapped. Otherwise
+`env run`.
+
+### So do you need an API key at all?
+
+For a Vercel deployment: **no.** Not in production, and not locally either.
+
+The one place you still need one is where nothing can mint a token for you:
+
+| Where | Credential | Why |
 | --- | --- | --- |
-| Production | OIDC (nothing to set) | no secret to store, rotate, or leak |
-| Local development | `AI_GATEWAY_API_KEY` in `.env.local` | never expires — no 12-hour cliff mid-afternoon |
-| CI | `AI_GATEWAY_API_KEY` as a secret | no linked project to mint a token |
+| Production and preview on Vercel | OIDC, automatic | nothing to set, nothing stored |
+| Local development | OIDC via `vercel env run` | fresh per run, nothing on disk |
+| CI (GitHub Actions) | `AI_GATEWAY_API_KEY` secret | no linked Vercel project to issue a token |
+| Self-hosted, or another cloud | `AI_GATEWAY_API_KEY` | Vercel is not the one running it |
 
-The 12-hour expiry is the whole argument for a key locally. An API key that never
-expires beats re-running a command every morning to work out why the agent
-stopped answering.
+The security difference is real, not cosmetic:
 
-`npm run agent:doctor` reports which credential it found and whether the gateway
-accepted it.
+| | API key | OIDC token |
+| --- | --- | --- |
+| Lifetime | until revoked | 2 hours in a Function, 12 hours pulled locally |
+| Stored where | Vercel's env store, and a file on your laptop | nowhere in production — injected per invocation |
+| If it leaks | spends money until someone notices and revokes it | expires on its own |
+| Tied to | the person who created it | the project |
+
+That last row matters more than it looks. Vercel deactivates API keys when their
+creator leaves the team, so a key created by a departing colleague takes your
+agent down with them. An OIDC token belongs to the project.
 
 ### Not the same as the agent's route auth
 
