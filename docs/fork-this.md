@@ -199,13 +199,22 @@ src/app/                  site, /chat, /console, /analytics, /audience-vocab
 
 ```bash
 npm run agent         # terminal chat, hot reload on save
-npm run agent:info    # what did the framework actually find?
+npm run agent:info    # what did the framework find on disk?
+npm run agent:doctor  # do the credentials actually work?
+npm test              # pure-logic regression net
 npm run typecheck
-npm run eval
+npm run eval          # scored checks against a real agent
 ```
 
-`npm run agent:info` first whenever something is missing. It reports discovery
-errors with file paths, which is almost always faster than reading logs.
+Two different questions, and you want both:
+
+- **`agent:info`** reports what the framework discovered and which environment
+  variables are set. Run it when a file you wrote is not taking effect.
+- **`agent:doctor`** makes one read-only call per integration and reports what
+  came back. Run it when something *is* configured but nothing works. It catches
+  the failures that are otherwise silent — an expired token, a Slack app missing
+  `users:read.email` (which makes everyone a non-approver *and* refuses every
+  Salesforce write), an empty approver list.
 
 ## Things worth knowing
 

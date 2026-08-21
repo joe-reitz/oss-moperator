@@ -35,6 +35,12 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Pure-logic regression net: CSV parsing, the SOQL read-only guard, UTM
+      # normalization, tracker selection, and the Knak prompt's load-bearing
+      # lines. No credentials needed, so this runs on forks too.
+      - name: Unit tests
+        run: npm test
+
       - name: Lint
         run: npm run lint
 

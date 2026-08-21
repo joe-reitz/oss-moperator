@@ -7,8 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --import tsx --test tests/*.test.ts",
     "agent": "eve dev",
     "agent:info": "eve info",
+    "agent:doctor": "tsx scripts/doctor.ts",
     "agent:build": "eve build",
     "eval": "eve eval",
     "typecheck": "tsc --noEmit"
@@ -37,6 +39,7 @@
     "eslint-config-next": "16.1.6",
     "microsandbox": "^0.5.10",
     "tailwindcss": "^4",
+    "tsx": "^4.23.12",
     "typescript": "^5"
   },
   "engines": {
