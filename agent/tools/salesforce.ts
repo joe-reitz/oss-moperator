@@ -459,36 +459,57 @@ Use it when someone asks "am I connected to Salesforce?", when a write was refus
           },
         }),
 
-        add_contacts_to_campaign: defineTool({
-          description:
-            "Add contacts to a Salesforce campaign as CampaignMembers. Requires approval unless the caller is an approver; large batches always require approval.",
+        add_campaign_members: defineTool({
+          description: `Add people to a Salesforce campaign as CampaignMembers.
+
+Pass Contact ids, Lead ids, or a mix — each is routed by its key prefix (003 is a Contact, 00Q is a Lead). A deduped import naturally produces a mix: people who already existed are Contacts, the ones you just created are Leads.
+
+**status** must be one of that campaign's configured member statuses, not a value you invent. They are per-campaign, and a wrong one fails every row. Check first:
+
+  SELECT Label, IsDefault FROM CampaignMemberStatus WHERE CampaignId = '701...'
+
+Omit status to use the campaign's default. State the count before calling; large batches always require approval.`,
           inputSchema: z.object({
             campaign_id: z.string().describe("The Campaign ID, starts with 701"),
-            contact_ids: z.array(z.string()).min(1).describe("Contact IDs to add"),
+            ids: z
+              .array(z.string())
+              .min(1)
+              .describe("Contact ids (003…), Lead ids (00Q…), or a mix"),
             status: z
               .string()
               .optional()
-              .describe("CampaignMember status, e.g. Sent, Responded. Defaults to Sent."),
+              .describe(
+                "A member status configured on this campaign, e.g. Sent or Responded. Omit for its default."
+              ),
           }),
           approval: bulkApproval((input) => {
-            const ids = input?.contact_ids
+            const ids = input?.ids
             return Array.isArray(ids) ? ids.length : 0
           }),
-          async execute({ campaign_id, contact_ids, status }, ctx) {
+          async execute({ campaign_id, ids, status }, ctx) {
             try {
               const identity = await resolveSfdcWrite(ctx)
               const resolved = credentialsOf(identity)
               if (!resolved.ok) return resolved.error
               const credentials = resolved.credentials
-              const result = await sf.addToCampaign(campaign_id, contact_ids, status, {
+
+              const result = await sf.addToCampaign(campaign_id, ids, status, {
                 credentials,
               })
+
               return {
                 success: true as const,
                 added: result.success,
                 failed: result.failed,
+                contacts: result.contacts,
+                leads: result.leads,
+                errors: result.errors,
                 recorded_as: resolved.actor,
-                message: `Added ${result.success} of ${contact_ids.length} contacts to campaign ${campaign_id}, recorded in Salesforce as ${resolved.actor}`,
+                message:
+                  `Added ${result.success} of ${ids.length} members to campaign ${campaign_id}` +
+                  ` (${result.contacts} contact(s), ${result.leads} lead(s))` +
+                  (result.failed > 0 ? `, ${result.failed} failed` : "") +
+                  `, recorded in Salesforce as ${resolved.actor}`,
               }
             } catch (error) {
               if (isSfdcAuthError(error)) requireSfdcReauth(ctx)

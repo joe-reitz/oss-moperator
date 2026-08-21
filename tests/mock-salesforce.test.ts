@@ -102,11 +102,27 @@ test("bulk insert and bulk update work, which is the list-import path", async ()
   assert.equal(bulk.success, 1)
 })
 
-test("campaign membership is created", async () => {
+test("campaign membership takes contacts and leads, routed by id prefix", async () => {
   resetMockOrg()
-  const added = await addToCampaign("701MOCK00000001", ["003MOCK00000003"], "Sent")
-  assert.equal(added.success, 1)
-  assert.equal((await query("SELECT Id FROM CampaignMember")).length, 3)
+  // A deduped import produces exactly this mix: an existing Contact plus a
+  // newly created Lead. Leads could not be added at all before.
+  const added = await addToCampaign(
+    "701MOCK00000001",
+    ["003MOCK00000003", "00QMOCK00000001"],
+    "Sent"
+  )
+  assert.equal(added.success, 2)
+  assert.equal(added.contacts, 1)
+  assert.equal(added.leads, 1)
+  assert.equal((await query("SELECT Id FROM CampaignMember")).length, 4)
+})
+
+test("an id that is neither a contact nor a lead is rejected, not silently dropped", async () => {
+  resetMockOrg()
+  const result = await addToCampaign("701MOCK00000001", ["001MOCK00000001"], "Sent")
+  assert.equal(result.success, 0)
+  assert.equal(result.failed, 1)
+  assert.match(result.errors[0], /neither a Contact.*nor a Lead/)
 })
 
 test("describe reports fields derived from the seed", async () => {

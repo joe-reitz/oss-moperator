@@ -221,6 +221,7 @@ normalization, tracker selection, email QA). Neither needs a CRM.
 | --- | --- |
 | [Fork this](docs/fork-this.md) | Make it yours in an afternoon |
 | [Architecture](docs/architecture.md) | How the pieces fit |
+| [Importing a list](docs/list-import.md) | Setup, required fields, and the dedupe flow |
 | [Adding integrations](docs/adding-integrations.md) | Add a service, with a template |
 | [More capabilities](docs/connections.md) | MCP servers and extensions worth adding |
 | [Security](docs/security.md) | Production checklist |

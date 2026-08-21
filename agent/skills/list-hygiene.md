@@ -50,9 +50,24 @@ hand-made spreadsheet are never what you would guess.
    already unsubscribed or bounced must not be re-added to a sending list,
    whatever the file says — and the file is often wrong, because it predates the
    opt-out. Trust the CRM, not the spreadsheet.
-7. **Required fields.** Whatever the target object requires — company, country,
-   lead source. Missing values will fail the write, so report them before
-   attempting it.
+7. **Required fields.** Check before importing, not after 600 rows fail. Call
+   `describe_salesforce_object` on the target and look at `required: true`.
+
+   The standard ones people trip over:
+
+   - **Lead needs `LastName` AND `Company`.** `Company` is the one that gets
+     forgotten, and a blank one fails the row. Set a fallback through `defaults`
+     when the file genuinely lacks it.
+   - **Contact needs `LastName`.** An imported list of strangers should become
+     Leads, not Contacts — a Contact needs an Account, and guessing that from an
+     email domain creates duplicate Accounts.
+   - **`Email` is not required by Salesforce** but is required in practice; a
+     record without one cannot be deduped, mailed, or matched later.
+   - Your org will have its own required fields on top. That is what the describe
+     call is for.
+
+   Set `LeadSource` through `defaults` even though it is optional. Skipping it is
+   why attribution reports have a large "unknown" bucket.
 
 ## Report, then import
 
@@ -73,3 +88,17 @@ file (`{"LeadSource": "Conference"}`).
 
 Partial success is normal: good rows land and bad rows come back with reasons.
 Report both counts, and do not re-run the whole file to retry a handful.
+
+## Adding them to a campaign
+
+`add_campaign_members` takes Contact ids, Lead ids, or a mix — and after a dedupe
+a mix is the normal case, since the already-known people are Contacts and the ones
+you just created are Leads. It routes each by id prefix, so you do not split them.
+
+`status` must be one of that campaign's own configured member statuses, not a
+value you invent. They are per-campaign and a wrong one fails every row. Check
+first:
+
+    SELECT Label, IsDefault FROM CampaignMemberStatus WHERE CampaignId = '701...'
+
+Omit it to use the campaign's default.

@@ -16,12 +16,13 @@ const DOCS = [
   { slug: "github", file: "setup-github.md", title: "Connect GitHub", step: "10" },
   { slug: "knak", file: "setup-knak.md", title: "Connect Knak", step: "11" },
   { slug: "luma", file: "setup-luma.md", title: "Connect Luma", step: "12" },
-  { slug: "extending", file: "adding-integrations.md", title: "Adding Integrations", step: "13" },
-  { slug: "connections", file: "connections.md", title: "More Capabilities", step: "14" },
-  { slug: "design-your-own", file: "design-your-own.md", title: "Design Your Own with AI", step: "15" },
-  { slug: "architecture", file: "architecture.md", title: "Architecture", step: "16" },
-  { slug: "security", file: "security.md", title: "Security Setup", step: "17" },
-  { slug: "sfdc-per-user-oauth", file: "sfdc-per-user-oauth.md", title: "Per-User Salesforce OAuth", step: "18" },
+  { slug: "list-import", file: "list-import.md", title: "Importing a List", step: "13" },
+  { slug: "extending", file: "adding-integrations.md", title: "Adding Integrations", step: "14" },
+  { slug: "connections", file: "connections.md", title: "More Capabilities", step: "15" },
+  { slug: "design-your-own", file: "design-your-own.md", title: "Design Your Own with AI", step: "16" },
+  { slug: "architecture", file: "architecture.md", title: "Architecture", step: "17" },
+  { slug: "security", file: "security.md", title: "Security Setup", step: "18" },
+  { slug: "sfdc-per-user-oauth", file: "sfdc-per-user-oauth.md", title: "Salesforce Write Identity", step: "19" },
 ]
 
 function markdownToHtml(md: string): string {

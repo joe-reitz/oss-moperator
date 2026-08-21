@@ -191,37 +191,89 @@ export async function describeGlobal(opts: SfdcRequestOptions = {}) {
   return withSfdcRequest(async (conn) => conn.describeGlobal(), opts)
 }
 
+/**
+ * Add people to a campaign as CampaignMembers.
+ *
+ * Salesforce requires exactly one of `ContactId` or `LeadId` per member, so this
+ * routes each id by its key prefix — `003` is a Contact, `00Q` is a Lead. That
+ * matters because a deduped import naturally produces a mixed list: some people
+ * already exist as Contacts, the new ones were just created as Leads. Requiring
+ * the caller to split them was the previous behaviour's real cost — Leads simply
+ * could not be added at all.
+ *
+ * Chunked at 200, the collections-API limit, and per-record failures are
+ * reported rather than failing the batch: a campaign with a mis-typed member
+ * status should not lose the other 600 rows.
+ */
 export async function addToCampaign(
   campaignId: string,
-  contactIds: string[],
+  ids: string[],
   status?: string,
   opts: SfdcRequestOptions = {}
-): Promise<{ success: number; failed: number }> {
-  if (mockEnabled()) {
-    for (const id of contactIds) {
-      mockCreate("CampaignMember", {
-        CampaignId: campaignId,
-        ContactId: id,
-        Status: status || "Sent",
-      })
+): Promise<{
+  success: number
+  failed: number
+  contacts: number
+  leads: number
+  errors: string[]
+}> {
+  const members: Array<Record<string, unknown>> = []
+  const errors: string[] = []
+  let contacts = 0
+  let leads = 0
+
+  for (const id of ids) {
+    const base: Record<string, unknown> = { CampaignId: campaignId }
+    if (status) base.Status = status
+
+    if (id.startsWith("003")) {
+      members.push({ ...base, ContactId: id })
+      contacts++
+    } else if (id.startsWith("00Q")) {
+      members.push({ ...base, LeadId: id })
+      leads++
+    } else {
+      errors.push(
+        `${id} is neither a Contact (003…) nor a Lead (00Q…), so it cannot be a campaign member.`
+      )
     }
-    return { success: contactIds.length, failed: 0 }
   }
-  return withSfdcRequest(async (conn) => {
-    const records = contactIds.map((id) => ({
-      CampaignId: campaignId,
-      ContactId: id,
-      Status: status || "Sent",
-    }))
 
-    const results = await conn.sobject("CampaignMember").create(records)
-    const resultsArray = Array.isArray(results) ? results : [results]
+  if (members.length === 0) {
+    return { success: 0, failed: ids.length, contacts: 0, leads: 0, errors }
+  }
 
-    return {
-      success: resultsArray.filter((r) => r.success).length,
-      failed: resultsArray.filter((r) => !r.success).length,
+  if (mockEnabled()) {
+    for (const member of members) mockCreate("CampaignMember", member)
+    return { success: members.length, failed: errors.length, contacts, leads, errors }
+  }
+
+  let success = 0
+  let failed = errors.length
+  const CHUNK = 200
+
+  for (let offset = 0; offset < members.length; offset += CHUNK) {
+    const chunk = members.slice(offset, offset + CHUNK)
+    const results = await withSfdcRequest(async (conn) => {
+      const outcome = await conn.sobject("CampaignMember").create(chunk)
+      return Array.isArray(outcome) ? outcome : [outcome]
+    }, opts)
+
+    for (const result of results) {
+      if (result.success) {
+        success++
+      } else {
+        failed++
+        for (const error of result.errors ?? []) {
+          // Dedupe the reasons: a bad Status produces the same message 600 times.
+          const message = (error as { message: string }).message
+          if (!errors.includes(message)) errors.push(message)
+        }
+      }
     }
-  }, opts)
+  }
+
+  return { success, failed, contacts, leads, errors: errors.slice(0, 10) }
 }
 
 export async function updateRecord(
