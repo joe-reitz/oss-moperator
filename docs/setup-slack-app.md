@@ -193,3 +193,44 @@ Once the Slack app is set up:
 2. Configure the AI provider (Anthropic or OpenAI)
 3. Deploy your app to Vercel
 4. Optionally set up Salesforce, Linear, or GitHub integrations
+
+## Optional: App Home and the :bug: reaction
+
+Two small things that make the agent much more discoverable. Both are optional —
+skip them and everything else still works.
+
+**App Home** gives the agent a Home tab listing what is actually connected on
+your install, example prompts drawn from those integrations, and the rules that
+govern writes. It is the only place someone can find out what the agent does
+without guessing a prompt.
+
+1. **App Home** → turn on **Home Tab**.
+2. **Event Subscriptions** → subscribe to `app_home_opened`.
+
+**The :bug: reaction** files an issue from any message, using the thread as
+context — the shortest path from "this is broken" to a written ticket, with
+nobody having to re-describe the problem.
+
+1. **Event Subscriptions** → subscribe to `reaction_added`.
+2. **OAuth & Permissions** → add the `reactions:read` scope.
+3. Reinstall the app.
+
+It needs a project tracker configured, otherwise the agent has nowhere to file.
+
+## Scopes, and the one that fails silently
+
+| Scope | Why |
+| --- | --- |
+| `app_mentions:read`, `chat:write` | the basics |
+| `users:read`, `users:read.email` | **resolve who is talking** |
+| `im:history` | direct messages |
+| `channels:history` | unmentioned follow-ups in a thread |
+| `files:read` | read attachments people send |
+| `files:write` | attach CSVs and exports to replies |
+| `reactions:read` | the :bug: reaction, if you enable it |
+| `im:write` | deliver private sign-in prompts as a DM |
+
+`users:read.email` is the one to double-check. Without it the agent cannot
+resolve anyone's email, which means **every caller is treated as a non-approver**
+and **every Salesforce write is refused** for lack of attribution — with nothing
+looking misconfigured. `npm run agent:doctor` checks for exactly this.

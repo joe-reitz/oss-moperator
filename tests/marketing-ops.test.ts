@@ -246,3 +246,41 @@ test("a well-formed email comes back clean", () => {
   assert.equal(report.clean, true, JSON.stringify(report.findings))
   assert.equal(report.links.untracked, 0)
 })
+
+// ─── Slack App Home ──────────────────────────────────────────────────────────
+
+test("the home tab tells the truth about what is connected", async () => {
+  const { buildHomeView } = await import("../agent/lib/slack-home")
+
+  for (const name of [
+    "SALESFORCE_ACCESS_TOKEN", "SALESFORCE_INSTANCE_URL", "LINEAR_API_KEY",
+    "ASANA_ACCESS_TOKEN", "HUBSPOT_API_TOKEN", "KNAK_API_KEY", "LUMA_API_KEY",
+    "GITHUB_TOKEN", "GITHUB_REPO", "MONDAY_API_TOKEN", "CLICKUP_API_TOKEN",
+    "JIRA_SITE", "JIRA_EMAIL", "JIRA_API_TOKEN", "MOPERATOR_TRACKER",
+  ]) {
+    delete process.env[name]
+  }
+
+  const bare = JSON.stringify(buildHomeView())
+  assert.match(bare, /Nothing is connected yet/)
+  // It must not advertise a capability this install does not have.
+  assert.doesNotMatch(bare, /Show me active campaigns/)
+
+  process.env.SALESFORCE_ACCESS_TOKEN = "t"
+  process.env.SALESFORCE_INSTANCE_URL = "https://x.my.salesforce.com"
+  const withCrm = JSON.stringify(buildHomeView())
+  assert.match(withCrm, /Salesforce/)
+  assert.match(withCrm, /active campaigns/)
+  // And it still names what is missing rather than staying silent.
+  assert.match(withCrm, /Not connected/)
+})
+
+test("the home tab states the write rules from live config", async () => {
+  const { buildHomeView } = await import("../agent/lib/slack-home")
+  const view = JSON.stringify(buildHomeView({
+    recentActivity: { turns: 12, toolCalls: 40, days: 7 },
+  }))
+  assert.match(view, /Bulk changes over 100 are always reviewed/)
+  assert.match(view, /recorded under \*your\* name/)
+  assert.match(view, /12 conversation\(s\), 40 action\(s\)/)
+})

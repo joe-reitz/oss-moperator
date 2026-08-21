@@ -26,6 +26,7 @@ import {
 
 import { config, isSpendApprover, isWriteApprover } from "../lib/config"
 import { authAttributes } from "../lib/identity"
+import { buildHomeView } from "../lib/slack-home"
 
 /**
  * Optional channel allowlist. Unset means "anywhere the app is installed",
@@ -217,6 +218,54 @@ export default slackChannel({
           isSpendApprover: isSpendApprover(email),
         }),
       },
+    }
+  },
+
+  /**
+   * Events that are not messages: the App Home tab and emoji reactions.
+   *
+   * `onEvent` is the raw fallback after the message hooks, so anything here is
+   * something no message handler claimed.
+   */
+  async onEvent(ctx, event) {
+    const raw = event as { type?: string; user?: string; item?: { channel?: string; ts?: string }; reaction?: string }
+
+    /**
+     * App Home. This is the only surface where someone can find out what the
+     * agent does without guessing a prompt, so it is worth keeping accurate —
+     * it renders from the live integration registry rather than a static list.
+     */
+    if (raw.type === "app_home_opened" && raw.user) {
+      await ctx.slack.request("views.publish", {
+        user_id: raw.user,
+        view: JSON.stringify(buildHomeView()),
+      })
+      return
+    }
+
+    /**
+     * :bug: on any message files it, with the thread as context.
+     *
+     * The cheapest possible path from "this is broken" to a written ticket:
+     * nobody has to leave the conversation or re-describe the problem. Requires
+     * the `reaction_added` event and `reactions:read`.
+     */
+    if (
+      raw.type === "reaction_added" &&
+      raw.reaction === "bug" &&
+      raw.item?.channel &&
+      raw.item?.ts &&
+      channelAllowed(raw.item.channel)
+    ) {
+      await ctx.send(
+        "Someone added a :bug: reaction to a message in this thread. Read the thread, work out what is broken, and file it in the project tracker — you write the title and body, and include enough context that an engineer can pick it up cold. Reply with the issue URL. If the thread does not actually describe a defect, say so instead of filing something vague.",
+        {
+          target: { channelId: raw.item.channel, threadTs: raw.item.ts },
+          auth: null,
+          title: "Bug filed from a reaction",
+        }
+      )
+      return
     }
   },
 
