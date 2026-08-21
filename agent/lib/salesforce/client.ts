@@ -262,3 +262,100 @@ export async function bulkUpdateRecords(
     }
   }, opts)
 }
+
+/**
+ * Insert many records in one operation.
+ *
+ * The gap this closes: without it, importing a 600-row list meant 600 separate
+ * single-record creates — 600 tool calls, and for a non-approver, 600 approval
+ * prompts. The list-import workflow was describable but not executable.
+ *
+ * Salesforce's collections API caps a request at 200 records, so this chunks.
+ * `allOrNone` is false per chunk: on a partial failure the good rows land and
+ * the bad ones come back with reasons, which is what you want on an import —
+ * failing 600 rows because two had a bad country code is not helpful.
+ */
+export async function createRecords(
+  objectName: string,
+  records: Array<Record<string, unknown>>,
+  opts: SfdcRequestOptions = {}
+): Promise<{
+  created: string[]
+  failed: Array<{ row: number; errors: string[] }>
+}> {
+  const CHUNK = 200
+  const created: string[] = []
+  const failed: Array<{ row: number; errors: string[] }> = []
+
+  for (let offset = 0; offset < records.length; offset += CHUNK) {
+    const chunk = records.slice(offset, offset + CHUNK)
+    const results = await withSfdcRequest(async (conn) => {
+      const outcome = await conn.sobject(objectName).create(chunk)
+      return Array.isArray(outcome) ? outcome : [outcome]
+    }, opts)
+
+    results.forEach((result, index) => {
+      if (result.success) {
+        created.push(result.id)
+      } else {
+        failed.push({
+          row: offset + index,
+          errors: result.errors?.map((error: { message: string }) => error.message) ?? [
+            "unknown error",
+          ],
+        })
+      }
+    })
+  }
+
+  return { created, failed }
+}
+
+/**
+ * Find which of a set of values already exist, by field.
+ *
+ * This is the dedupe primitive. SOQL has a hard query-length limit, so a
+ * thousand emails cannot go in one `IN` clause — hence chunking, which the
+ * agent should not have to reinvent (and get subtly wrong) in a prompt.
+ *
+ * Returns a map from the normalized value to the matching records, so a caller
+ * can distinguish "already a Contact" from "already a Lead".
+ */
+export async function findByFieldValues(
+  objectName: string,
+  field: string,
+  values: string[],
+  opts: SfdcRequestOptions & { extraFields?: string[] } = {}
+): Promise<Map<string, Record<string, unknown>[]>> {
+  // 200 values per query keeps the statement well inside SOQL's length limit
+  // even with long addresses.
+  const CHUNK = 200
+  const found = new Map<string, Record<string, unknown>[]>()
+  const fields = Array.from(new Set(["Id", field, ...(opts.extraFields ?? [])]))
+
+  const unique = Array.from(
+    new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))
+  )
+
+  for (let offset = 0; offset < unique.length; offset += CHUNK) {
+    const chunk = unique.slice(offset, offset + CHUNK)
+    // Escape single quotes and backslashes; an apostrophe in an address would
+    // otherwise break the statement or, worse, alter it.
+    const list = chunk
+      .map((value) => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`)
+      .join(",")
+
+    const soql = `SELECT ${fields.join(", ")} FROM ${objectName} WHERE ${field} IN (${list})`
+    const records = await queryAllRecords(soql, opts)
+
+    for (const record of records) {
+      const key = String(record[field] ?? "").trim().toLowerCase()
+      if (!key) continue
+      const existing = found.get(key)
+      if (existing) existing.push(record)
+      else found.set(key, [record])
+    }
+  }
+
+  return found
+}
