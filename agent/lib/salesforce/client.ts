@@ -18,6 +18,16 @@
 
 import jsforce, { Connection } from "jsforce"
 
+import {
+  mockCreate,
+  mockDelete,
+  mockDescribe,
+  mockDescribeGlobal,
+  mockEnabled,
+  mockQuery,
+  mockUpdate,
+} from "./mock"
+
 /** A resolved Salesforce credential pair, from either path above. */
 export interface SfdcCredentials {
   accessToken: string
@@ -36,6 +46,9 @@ export interface SfdcRequestOptions {
 let cachedConnection: Connection | null = null
 
 export function isSalesforceConfigured(): boolean {
+  // Mock mode counts as configured: the point is to run the tools with no
+  // credentials, which means they have to be advertised to the model.
+  if (mockEnabled()) return true
   return !!(
     process.env.SALESFORCE_ACCESS_TOKEN && process.env.SALESFORCE_INSTANCE_URL
   )
@@ -129,6 +142,7 @@ export async function query(
   soql: string,
   opts: SfdcRequestOptions = {}
 ): Promise<Record<string, unknown>[]> {
+  if (mockEnabled()) return mockQuery(soql)
   return withSfdcRequest(async (conn) => {
     const result = await conn.query(soql)
     return result.records as Record<string, unknown>[]
@@ -144,6 +158,7 @@ export async function query(
 export async function queryAllRecords<
   T extends Record<string, unknown> = Record<string, unknown>,
 >(soql: string, opts: SfdcRequestOptions = {}): Promise<T[]> {
+  if (mockEnabled()) return mockQuery(soql) as T[]
   return withSfdcRequest(async (conn) => {
     const deadline = Date.now() + 120_000
     let result = await conn.query<T>(soql)
@@ -167,10 +182,12 @@ export async function describeObject(
   objectName: string,
   opts: SfdcRequestOptions = {}
 ) {
+  if (mockEnabled()) return mockDescribe(objectName)
   return withSfdcRequest(async (conn) => conn.sobject(objectName).describe(), opts)
 }
 
 export async function describeGlobal(opts: SfdcRequestOptions = {}) {
+  if (mockEnabled()) return mockDescribeGlobal()
   return withSfdcRequest(async (conn) => conn.describeGlobal(), opts)
 }
 
@@ -180,6 +197,16 @@ export async function addToCampaign(
   status?: string,
   opts: SfdcRequestOptions = {}
 ): Promise<{ success: number; failed: number }> {
+  if (mockEnabled()) {
+    for (const id of contactIds) {
+      mockCreate("CampaignMember", {
+        CampaignId: campaignId,
+        ContactId: id,
+        Status: status || "Sent",
+      })
+    }
+    return { success: contactIds.length, failed: 0 }
+  }
   return withSfdcRequest(async (conn) => {
     const records = contactIds.map((id) => ({
       CampaignId: campaignId,
@@ -203,6 +230,7 @@ export async function updateRecord(
   data: Record<string, unknown>,
   opts: SfdcRequestOptions = {}
 ): Promise<void> {
+  if (mockEnabled()) return mockUpdate(objectName, id, data)
   return withSfdcRequest(async (conn) => {
     const result = await conn.sobject(objectName).update({ Id: id, ...data })
     if (!result.success) {
@@ -218,6 +246,7 @@ export async function createRecord(
   data: Record<string, unknown>,
   opts: SfdcRequestOptions = {}
 ): Promise<string> {
+  if (mockEnabled()) return mockCreate(objectName, data)
   return withSfdcRequest(async (conn) => {
     const result = await conn.sobject(objectName).create(data)
     if (!result.success) {
@@ -234,6 +263,7 @@ export async function deleteRecord(
   id: string,
   opts: SfdcRequestOptions = {}
 ): Promise<void> {
+  if (mockEnabled()) return mockDelete(objectName, id)
   return withSfdcRequest(async (conn) => {
     const result = await conn.sobject(objectName).destroy(id)
     if (!result.success) {
@@ -249,6 +279,10 @@ export async function bulkUpdateRecords(
   records: Array<{ Id: string; [key: string]: unknown }>,
   opts: SfdcRequestOptions = {}
 ): Promise<{ success: number; failed: number; errors: string[] }> {
+  if (mockEnabled()) {
+    for (const record of records) mockUpdate(objectName, record.Id, record)
+    return { success: records.length, failed: 0, errors: [] }
+  }
   return withSfdcRequest(async (conn) => {
     const results = await conn.sobject(objectName).update(records)
     const resultsArray = Array.isArray(results) ? results : [results]
@@ -283,6 +317,13 @@ export async function createRecords(
   created: string[]
   failed: Array<{ row: number; errors: string[] }>
 }> {
+  if (mockEnabled()) {
+    return {
+      created: records.map((record) => mockCreate(objectName, record)),
+      failed: [],
+    }
+  }
+
   const CHUNK = 200
   const created: string[] = []
   const failed: Array<{ row: number; errors: string[] }> = []

@@ -91,9 +91,28 @@ npm run agent   # terminal chat with the agent (fastest loop, no Slack needed)
 npm run dev     # the full app: site, /chat, /console, /analytics, docs
 ```
 
-`npm run agent:info` prints exactly what the agent discovered — tools, skills,
-schedules, and which integrations are active. Run it whenever something is
-missing.
+Two commands worth knowing before anything goes wrong:
+
+```bash
+npm run agent:info    # what did the framework find on disk?
+npm run agent:doctor  # do the credentials actually work?
+```
+
+`agent:info` lists the tools, skills, and schedules it discovered. `agent:doctor`
+makes one read-only call per integration and reports what came back — it catches
+the failures that are otherwise silent, like a Slack app missing
+`users:read.email`, which makes everyone a non-approver *and* refuses every
+Salesforce write.
+
+### No Salesforce org handy?
+
+```bash
+MOPERATOR_MOCK=true npm run agent
+```
+
+Gives Salesforce a small in-memory org so the CRM tools work and you can try the
+thing before wiring up credentials. Enough to run `npm test` and `npm run eval`
+too.
 
 ### Add integrations
 
@@ -189,8 +208,10 @@ change, and the agent picks up each tool's own vocabulary.
 **audience vocabulary** at `/audience-vocab` that teaches the agent what your
 team means by "segment" or "tier" without a deploy.
 
-**Evals** — `npm run eval` boots the real agent and checks it, so you can verify
-your own fork rather than finding out in Slack.
+**Evals and tests** — `npm run eval` boots the real agent and checks its
+behavior; `npm test` is a 72-case regression net over the pure logic where a
+break would otherwise be silent (CSV parsing, the read-only SOQL guard, UTM
+normalization, tracker selection, email QA). Neither needs a CRM.
 
 ---
 
