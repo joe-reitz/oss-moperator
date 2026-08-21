@@ -105,6 +105,67 @@ export const INTEGRATIONS: IntegrationManifest[] = [
     setupGuide: "docs/setup-marketo.md",
   },
   {
+    id: "customerio",
+    name: "Customer.io",
+    description:
+      "Behavioural messaging — people, segments, campaigns, broadcasts, transactional email",
+    capabilities: [
+      "Look up people by email, or search them with a filter",
+      "List segments and read their membership",
+      "Read campaigns and their delivery metrics over a date range",
+      "Create and update people, and record events that can start campaigns",
+      "Add and remove members of manual segments (needs the Track API credentials)",
+      "Send transactional email, and fire API-triggered broadcasts — both always require approval",
+    ],
+    examples: [
+      "Who is jane@acme.com in Customer.io and what plan are they on?",
+      "How did the onboarding campaign perform over the last 30 days?",
+      "Add these 40 people to the manual win-back segment",
+    ],
+    requires: ["CUSTOMERIO_APP_API_KEY"],
+    setupGuide: "docs/setup-customerio.md",
+  },
+  {
+    id: "iterable",
+    name: "Iterable",
+    description:
+      "Cross-channel marketing automation — users, lists, campaigns, templates",
+    capabilities: [
+      "Look up users by email, with their fields and list subscriptions",
+      "List lists and read their membership, and list campaigns and templates",
+      "Read campaign metrics for one or many campaigns over a date range",
+      "Create and update users singly or in bulk, chunked at Iterable's 1,000 limit",
+      "Subscribe and unsubscribe people from static lists",
+      "Send an existing campaign to one person — always requires approval",
+    ],
+    examples: [
+      "How many people are on the Q1 nurture list in Iterable?",
+      "Compare open rates across these three campaigns",
+      "Add these contacts to list 12345",
+    ],
+    requires: ["ITERABLE_API_KEY"],
+    setupGuide: "docs/setup-iterable.md",
+  },
+  {
+    id: "inflection",
+    name: "Inflection",
+    description:
+      "B2B marketing automation built on product and sales data — contacts, lists, activity",
+    capabilities: [
+      "Look up contacts by email or id",
+      "Read a contact's marketing activity, product activity, or combined log",
+      "Create and update contacts in batches of up to 1,000 (writes are asynchronous)",
+      "Create lists, read their members, and add or remove membership",
+    ],
+    examples: [
+      "What has jane@acme.com done in the product recently?",
+      "Import these contacts into Inflection and add them to the launch list",
+      "Show me the marketing activity for this contact",
+    ],
+    requires: ["INFLECTION_API_TOKEN"],
+    setupGuide: "docs/setup-inflection.md",
+  },
+  {
     id: "google_ads",
     name: "Google Ads",
     description: "Paid search and display — campaigns, budgets, ad groups, creative",

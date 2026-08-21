@@ -39,7 +39,8 @@ and deployed as a single Next.js project.
   → files an issue with a written title, body, priority, and labels
 ```
 
-It reaches Salesforce, HubSpot, Marketo, Google Ads, Knak, GitHub, Luma, and your
+It reaches Salesforce, Google Ads, Knak, GitHub, Luma, your marketing automation
+platform — HubSpot, Marketo, Customer.io, Iterable, or Inflection — and your
 project tracker — Linear, Asana, Jira, monday.com, or ClickUp — whichever you
 configure, plus web search, a Linux sandbox, and its own CRM-safety rules.
 
@@ -135,6 +136,9 @@ Set the variables, restart. That is the whole step.
 | Salesforce | `SALESFORCE_ACCESS_TOKEN`, `SALESFORCE_INSTANCE_URL` | [docs](docs/setup-salesforce.md) |
 | HubSpot | `HUBSPOT_API_TOKEN` | [docs](docs/setup-hubspot.md) |
 | Marketo | `MARKETO_CLIENT_ID`, `MARKETO_CLIENT_SECRET`, `MARKETO_REST_ENDPOINT` | [docs](docs/setup-marketo.md) |
+| Customer.io | `CUSTOMERIO_APP_API_KEY` (+ optional Track credentials) | [docs](docs/setup-customerio.md) |
+| Iterable | `ITERABLE_API_KEY` | [docs](docs/setup-iterable.md) |
+| Inflection | `INFLECTION_API_TOKEN` | [docs](docs/setup-inflection.md) |
 | Google Ads | `GOOGLE_ADS_CLIENT_ID`, `..._SECRET`, `..._DEVELOPER_TOKEN`, `..._CUSTOMER_ID` | [docs](docs/setup-google-ads.md) |
 | Project tracker | any one of Linear, Asana, Jira, monday.com, ClickUp | [docs](docs/setup-project-tracker.md) |
 | GitHub | `GITHUB_TOKEN`, `GITHUB_REPO` | [docs](docs/setup-github.md) |
@@ -176,8 +180,11 @@ not a polite prompt. These are enforced in code, in `agent/lib/approval.ts`:
 - **Bulk writes** are reviewed above a threshold no matter who asks, and refused
   outright above a hard cap. Splitting a batch to get under the limit does not
   work — the cap is per call and the agent is told why.
-- **Deletions** and **anything that sends to real people** (a Marketo campaign,
-  a published event page) always need a human, and can never run from a schedule.
+- **Deletions** and **anything that sends to real people** (a Marketo campaign, a
+  Customer.io broadcast or transactional message, an Iterable campaign send, a
+  published event page) always need a human, and can never run from a schedule.
+  A Customer.io broadcast has the widest blast radius of any of them: one call
+  reaches a whole segment.
 - **Ad budget changes** always need a human, and specifically one on the ad-spend
   approver list — checked again at the moment the change is applied, so the
   person who asked cannot approve their own spend.

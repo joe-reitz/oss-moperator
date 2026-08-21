@@ -324,6 +324,73 @@ async function checkMarketo(): Promise<void> {
   })
 }
 
+/**
+ * These three go through the real client rather than a hand-rolled fetch.
+ *
+ * That is deliberate: it means `agent:doctor` exercises the same base-URL,
+ * region and error-mapping code the tools use, so a wrong host or a
+ * misread region shows up here instead of mid-conversation.
+ */
+async function checkCustomerio(): Promise<void> {
+  if (!isConfigured("customerio")) {
+    record("Customer.io", "skip", "not configured")
+    return
+  }
+  await probe("Customer.io", async () => {
+    const cio = await import("../agent/lib/customerio/client")
+    await cio.ping()
+
+    const hasTrack =
+      !!process.env.CUSTOMERIO_SITE_ID && !!process.env.CUSTOMERIO_TRACK_API_KEY
+
+    return hasTrack
+      ? { status: "ok", detail: "App API readable; Track API credentials present" }
+      : {
+          status: "warn",
+          detail: "App API readable, but no Track API credentials",
+          fix: "Reads and transactional sends work. Writing people, recording events, and changing manual segment membership need CUSTOMERIO_SITE_ID and CUSTOMERIO_TRACK_API_KEY.",
+        }
+  })
+}
+
+async function checkIterable(): Promise<void> {
+  if (!isConfigured("iterable")) {
+    record("Iterable", "skip", "not configured")
+    return
+  }
+  await probe("Iterable", async () => {
+    const it = await import("../agent/lib/iterable/client")
+    const lists = (await it.ping()) as { lists?: unknown[] }
+    const count = Array.isArray(lists?.lists) ? lists.lists.length : undefined
+
+    // An empty list set on a valid key usually means the key belongs to a
+    // different project, which authenticates fine and sees nothing.
+    if (count === 0) {
+      return {
+        status: "warn",
+        detail: "authenticated, but the project has no lists",
+        fix: "If you expected lists here, the key may belong to another Iterable project — keys are project-scoped.",
+      }
+    }
+    return {
+      status: "ok",
+      detail: count === undefined ? "lists readable" : `${count} lists readable`,
+    }
+  })
+}
+
+async function checkInflection(): Promise<void> {
+  if (!isConfigured("inflection")) {
+    record("Inflection", "skip", "not configured")
+    return
+  }
+  await probe("Inflection", async () => {
+    const inf = await import("../agent/lib/inflection/client")
+    await inf.ping()
+    return { status: "ok", detail: "contacts readable" }
+  })
+}
+
 async function checkGoogleAds(): Promise<void> {
   if (!isConfigured("google_ads")) {
     record("Google Ads", "skip", "not configured")
@@ -532,6 +599,9 @@ async function main(): Promise<void> {
   await checkSalesforce()
   await checkHubspot()
   await checkMarketo()
+  await checkCustomerio()
+  await checkIterable()
+  await checkInflection()
   await checkGoogleAds()
   await checkTracker()
   await checkKnak()
