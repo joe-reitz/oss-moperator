@@ -46,6 +46,62 @@ function channelAllowed(channelId: string): boolean {
 }
 
 /**
+ * Slack user mention, e.g. `<@U012ABC>`. Workspace ids start with `U`; `W` is
+ * an Enterprise Grid org user. Deliberately not matching `<!here>`,
+ * `<!channel>`, or `<!subteam^…>` — a broadcast is not addressed to anyone in
+ * particular, so it should not silence the agent on its own.
+ */
+const USER_MENTION = /<@[UW][A-Z0-9]+>/
+
+/**
+ * Strip the markup that carries no request: mentions, and the `<url>` /
+ * `<url|label>` wrappers Slack puts around links. What is left is what the
+ * person actually typed.
+ */
+function substantiveText(text: string): string {
+  return (text || "")
+    .replace(new RegExp(USER_MENTION.source, "g"), " ")
+    .replace(/<!(?:here|channel|everyone)>/g, " ")
+    .replace(/<!subteam\^[^>]+>/g, " ")
+    .replace(/<((?:https?|mailto):[^>|]+)\|([^>]*)>/gi, "$2")
+    .replace(/<((?:https?|mailto):[^>]+)>/gi, "$1")
+    .trim()
+}
+
+/**
+ * Should an un-mentioned message in a subscribed thread start a turn?
+ *
+ * `onMessage` fires on every human message in a thread the agent has joined,
+ * which is what lets follow-ups work without re-@mentioning it. The cost is
+ * that a thread is also where people talk to *each other*: someone drops
+ * screenshots to show a colleague what they built, or tags a teammate for a
+ * comment. Answering those is noise, and it reads as the bot not understanding
+ * the room — it will even say "I don't see a request here" and post that as a
+ * reply, which is the same problem wearing a hat.
+ *
+ * Two deterministic filters, applied on the webhook side before a turn starts
+ * so an ignored message costs nothing:
+ *
+ *   - **Addressed to someone else.** Keying on the mention alone is safe
+ *     because eve routes `app_mention` to `onAppMention`; anything arriving
+ *     here did not mention the agent. So a user mention here is always someone
+ *     else being addressed.
+ *   - **No request in it.** Attachments or markup with no typed text — a
+ *     screenshot drop. Text *plus* attachments still counts, because "this
+ *     looks wrong, fix the CTA" with a screenshot is a real ask.
+ *
+ * The escape hatch for both is the obvious one: @mention the agent, which
+ * routes to `onAppMention` and bypasses this entirely.
+ */
+export function wantsAgentReply(message: {
+  text: string
+  attachments?: readonly unknown[]
+}): boolean {
+  if (USER_MENTION.test(message.text || "")) return false
+  return substantiveText(message.text).length > 0
+}
+
+/**
  * Credentials.
  *
  * Vercel Connect is the recommended path: it rotates the bot token, verifies
@@ -143,6 +199,9 @@ export default slackChannel({
    * every follow-up needs another @mention, which reads as clumsy in a
    * conversation. Requires the `message.channels` event and `channels:history`
    * scope; harmless if those are not granted.
+   *
+   * Gated by `wantsAgentReply` so the agent stays out of side conversations
+   * happening in its own thread.
    */
   async onMessage(ctx, message) {
     if (message.author?.isBot) return null
@@ -158,6 +217,10 @@ export default slackChannel({
       )
       return null
     }
+
+    // Someone else's conversation, or nothing to act on. Checked before
+    // `isSubscribed` because it is pure and saves the round trip.
+    if (!wantsAgentReply(message)) return null
 
     if (!(await ctx.isSubscribed())) return null
 
