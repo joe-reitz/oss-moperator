@@ -204,6 +204,40 @@ Once the Slack app is set up:
 3. Deploy your app to Vercel
 4. Optionally set up Salesforce, Linear, or GitHub integrations
 
+## When the agent replies without being mentioned
+
+With `channels:history` granted, the agent can answer a follow-up in its own
+thread without another @mention — "rebuild it with the CTA" just works. The
+trap is that a thread is also where people talk to *each other*, and early
+versions answered all of it: screenshots posted to show a colleague, a message
+tagging a teammate, the word "testing".
+
+So an un-mentioned message only starts a turn when the agent is **mid-exchange**:
+its own message was the one immediately before, and that message asked for
+something. "Want me to run a build?" earns the next message; "Standing by."
+does not. Everything else waits for an @mention.
+
+The rule is deliberately conversational rather than clever. Letting the model
+decide whether to stay quiet does not work — it is not consulted, because
+whether to reply is settled in the channel layer before any model runs.
+
+### Muting a thread
+
+| How | Effect |
+| --- | --- |
+| `/quiet` in the thread | agent stays silent until `/unquiet` |
+| `:mute:` reaction on the thread's **first** message | same thing, and visible to everyone |
+| @mention | always reaches the agent, muted or not |
+
+`/quiet` needs `reactions:write` to set the reaction itself. Without that scope
+it says so and asks you to add the reaction by hand — it reads the reaction
+either way, so the mute still works, it just cannot set it for you.
+
+The flag lives on the Slack message rather than in a datastore because Redis is
+optional here: `getRedis()` returns null when Upstash is unconfigured, so a
+Redis-backed mute would have silently done nothing in exactly the deployments
+that need it most.
+
 ## Optional: App Home and the :bug: reaction
 
 Two small things that make the agent much more discoverable. Both are optional —
@@ -237,7 +271,8 @@ It needs a project tracker configured, otherwise the agent has nowhere to file.
 | `channels:history` | unmentioned follow-ups in a thread |
 | `files:read` | read attachments people send |
 | `files:write` | attach CSVs and exports to replies |
-| `reactions:read` | the :bug: reaction, if you enable it |
+| `reactions:read` | the :bug: reaction, and the :mute: thread mute |
+| `reactions:write` | lets `/quiet` set the mute itself |
 | `im:write` | deliver private sign-in prompts as a DM |
 
 `users:read.email` is the one to double-check. Without it the agent cannot

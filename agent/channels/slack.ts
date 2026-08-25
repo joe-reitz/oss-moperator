@@ -27,6 +27,11 @@ import {
 import { config, isSpendApprover, isWriteApprover } from "../lib/config"
 import { authAttributes } from "../lib/identity"
 import { buildHomeView } from "../lib/slack-home"
+import {
+  gateReply,
+  MUTE_REACTION,
+  type ThreadMessage,
+} from "../lib/slack-reply-gate"
 
 /**
  * Optional channel allowlist. Unset means "anywhere the app is installed",
@@ -46,59 +51,118 @@ function channelAllowed(channelId: string): boolean {
 }
 
 /**
- * Slack user mention, e.g. `<@U012ABC>`. Workspace ids start with `U`; `W` is
- * an Enterprise Grid org user. Deliberately not matching `<!here>`,
- * `<!channel>`, or `<!subteam^…>` — a broadcast is not addressed to anyone in
- * particular, so it should not silence the agent on its own.
+ * Read the thread so the reply gate can see who spoke last.
+ *
+ * One `conversations.replies` call answers both questions the gate asks: what
+ * the previous message was, and whether the thread root carries the mute
+ * reaction. `limit` is small because only the tail matters, and `oldest` is
+ * omitted deliberately — Slack returns the root first regardless, which is
+ * where the reaction lives.
+ *
+ * A failure here returns an empty history, and an empty history means the gate
+ * cannot establish a mid-exchange, so the agent stays quiet. Failing closed is
+ * right: the cost of silence is someone re-@mentioning, and the cost of the
+ * other direction is what this whole module exists to stop.
  */
-const USER_MENTION = /<@[UW][A-Z0-9]+>/
-
 /**
- * Strip the markup that carries no request: mentions, and the `<url>` /
- * `<url|label>` wrappers Slack puts around links. What is left is what the
- * person actually typed.
+ * The bot's own Slack user id, per workspace.
+ *
+ * Needed because "was the previous message mine?" cannot be answered by
+ * `bot_id` alone — that matches every app in the channel, and being asked a
+ * question by a *different* bot must not make this agent answer. Slack has no
+ * inbound field for it, so `auth.test` is the lookup; the result is stable for
+ * the life of the install, so it is cached per team and never re-fetched.
+ *
+ * On failure the gate falls back to `bot_id`, which is worse but not wrong for
+ * a workspace with only this app in it.
  */
-function substantiveText(text: string): string {
-  return (text || "")
-    .replace(new RegExp(USER_MENTION.source, "g"), " ")
-    .replace(/<!(?:here|channel|everyone)>/g, " ")
-    .replace(/<!subteam\^[^>]+>/g, " ")
-    .replace(/<((?:https?|mailto):[^>|]+)\|([^>]*)>/gi, "$2")
-    .replace(/<((?:https?|mailto):[^>]+)>/gi, "$1")
-    .trim()
+const botUserIds = new Map<string, string | undefined>()
+
+async function resolveBotUserId(ctx: SlackContext): Promise<string | undefined> {
+  const key = ctx.slack.teamId ?? "default"
+  const cached = botUserIds.get(key)
+  if (cached !== undefined || botUserIds.has(key)) return cached
+
+  let userId: string | undefined
+  try {
+    const response = await ctx.slack.request("auth.test", {})
+    if (response.ok) userId = (response as { user_id?: string }).user_id
+  } catch {
+    // Leave undefined; the gate degrades to `bot_id`.
+  }
+  botUserIds.set(key, userId)
+  return userId
 }
 
 /**
- * Should an un-mentioned message in a subscribed thread start a turn?
+ * Add or remove the mute reaction on the thread root.
  *
- * `onMessage` fires on every human message in a thread the agent has joined,
- * which is what lets follow-ups work without re-@mentioning it. The cost is
- * that a thread is also where people talk to *each other*: someone drops
- * screenshots to show a colleague what they built, or tags a teammate for a
- * comment. Answering those is noise, and it reads as the bot not understanding
- * the room — it will even say "I don't see a request here" and post that as a
- * reply, which is the same problem wearing a hat.
+ * The flag lives on the Slack message rather than in a store on purpose. Redis
+ * is optional in this project and `getRedis()` returns null when it is
+ * unconfigured, so a Redis-backed mute would have silently done nothing —
+ * the same broken promise as the agent saying "I'll stop auto-responding" and
+ * then not stopping. A reaction is durable, survives redeploys, needs no
+ * infrastructure, and is visible to everyone in the thread.
  *
- * Two deterministic filters, applied on the webhook side before a turn starts
- * so an ignored message costs nothing:
- *
- *   - **Addressed to someone else.** Keying on the mention alone is safe
- *     because eve routes `app_mention` to `onAppMention`; anything arriving
- *     here did not mention the agent. So a user mention here is always someone
- *     else being addressed.
- *   - **No request in it.** Attachments or markup with no typed text — a
- *     screenshot drop. Text *plus* attachments still counts, because "this
- *     looks wrong, fix the CTA" with a screenshot is a real ask.
- *
- * The escape hatch for both is the obvious one: @mention the agent, which
- * routes to `onAppMention` and bypasses this entirely.
+ * `reactions.add` needs the `reactions:write` scope. If it is missing this says
+ * so rather than reporting success, because a mute that quietly fails is the
+ * bug being fixed.
  */
-export function wantsAgentReply(message: {
-  text: string
-  attachments?: readonly unknown[]
-}): boolean {
-  if (USER_MENTION.test(message.text || "")) return false
-  return substantiveText(message.text).length > 0
+async function setThreadMuted(
+  ctx: SlackContext,
+  message: SlackMessage,
+  muted: boolean
+): Promise<void> {
+  const operation = muted ? "reactions.add" : "reactions.remove"
+  let error: string | undefined
+
+  try {
+    const response = await ctx.slack.request(operation, {
+      channel: message.channelId,
+      timestamp: message.threadTs,
+      name: MUTE_REACTION,
+    })
+    if (!response.ok) error = String((response as { error?: string }).error ?? "unknown")
+  } catch (cause) {
+    error = cause instanceof Error ? cause.message : "unknown"
+  }
+
+  // Already in the requested state is success as far as the caller is concerned.
+  if (error === "already_reacted" || error === "no_reaction") error = undefined
+
+  if (!error) {
+    await ctx.thread.post(
+      muted
+        ? `Muted this thread — I will not reply unless you @mention me. \`/unquiet\` to undo, or remove the :${MUTE_REACTION}: reaction from the first message.`
+        : "Unmuted. I will pick up follow-ups in this thread again."
+    )
+    return
+  }
+
+  await ctx.thread.post(
+    error === "missing_scope"
+      ? `I could not ${muted ? "set" : "clear"} the mute: my Slack app is missing the \`reactions:write\` scope. Add it in **OAuth & Permissions** and reinstall, or ${muted ? "add" : "remove"} the :${MUTE_REACTION}: reaction on the first message of this thread yourself — I read that either way.`
+      : `I could not ${muted ? "set" : "clear"} the mute (Slack said \`${error}\`). You can ${muted ? "add" : "remove"} the :${MUTE_REACTION}: reaction on the first message of this thread instead — I read that either way.`
+  )
+}
+
+async function readThreadTail(
+  ctx: SlackContext,
+  message: SlackMessage
+): Promise<ThreadMessage[]> {
+  try {
+    const response = await ctx.slack.request("conversations.replies", {
+      channel: message.channelId,
+      ts: message.threadTs,
+      limit: 30,
+      include_all_metadata: false,
+    })
+    if (!response.ok) return []
+    const messages = (response as { messages?: ThreadMessage[] }).messages
+    return Array.isArray(messages) ? messages : []
+  } catch {
+    return []
+  }
 }
 
 /**
@@ -200,17 +264,21 @@ export default slackChannel({
    * conversation. Requires the `message.channels` event and `channels:history`
    * scope; harmless if those are not granted.
    *
-   * Gated by `wantsAgentReply` so the agent stays out of side conversations
-   * happening in its own thread.
+   * Gated by `gateReply`, which only answers when the agent is mid-exchange —
+   * its own message was the previous one, and it asked for something. Without
+   * that the agent answered every message in its thread, including people
+   * talking to each other.
    */
   async onMessage(ctx, message) {
     if (message.author?.isBot) return null
     if (!channelAllowed(message.channelId)) return null
 
+    const text = message.text.trim()
+
     // `/new` starts over: retires the session, its history, and its sandbox.
     // Useful when a long thread has drifted and the context is working against
     // the answer.
-    if (message.text.trim() === "/new") {
+    if (text === "/new") {
       await ctx.reset({ reason: "Slack user asked for a fresh conversation" })
       await ctx.thread.post(
         "Started a fresh conversation. Previous context, files, and pending approvals in this thread are cleared."
@@ -218,11 +286,21 @@ export default slackChannel({
       return null
     }
 
-    // Someone else's conversation, or nothing to act on. Checked before
-    // `isSubscribed` because it is pure and saves the round trip.
-    if (!wantsAgentReply(message)) return null
+    // `/quiet` and `/unquiet` toggle the mute for the whole thread. Handled
+    // here rather than as a Slack slash command so it works in the thread the
+    // agent is actually being annoying in, with no extra app config.
+    if (text === "/quiet" || text === "/unquiet") {
+      await setThreadMuted(ctx, message, text === "/quiet")
+      return null
+    }
 
     if (!(await ctx.isSubscribed())) return null
+
+    const [history, botUserId] = await Promise.all([
+      readThreadTail(ctx, message),
+      resolveBotUserId(ctx),
+    ])
+    if (!gateReply({ message, history, botUserId }).reply) return null
 
     const auth = await authWithEmail(ctx, message)
     return auth ? { auth } : null

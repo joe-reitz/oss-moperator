@@ -31,7 +31,8 @@
         "users:read.email",
         "files:read",
         "files:write",
-        "reactions:read"
+        "reactions:read",
+        "reactions:write"
       ],
       "user": [
         "openid",

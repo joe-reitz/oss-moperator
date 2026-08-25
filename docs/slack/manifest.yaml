@@ -26,6 +26,7 @@ oauth_config:
       - "files:read"
       - "files:write"
       - "reactions:read"
+      - "reactions:write"
     user:
       - "openid"
       - "email"
