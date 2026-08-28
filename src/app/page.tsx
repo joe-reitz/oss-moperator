@@ -123,16 +123,6 @@ const EXAMPLE_COMMANDS = [
 export default function Home() {
   return (
     <div className="min-h-screen bg-black text-white font-mono">
-      {/* Terminal Window Chrome */}
-      <div className="border-b border-gray-800">
-        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-red-500 inline-block" />
-          <span className="w-3 h-3 rounded-full bg-yellow-500 inline-block" />
-          <span className="w-3 h-3 rounded-full bg-green-500 inline-block" />
-          <span className="ml-4 text-gray-500 text-sm">moperator — bash — 80x24</span>
-        </div>
-      </div>
-
       <div className="max-w-5xl mx-auto px-6 py-12">
         {/* Hero: ASCII Art casting light into WebGPU digital rain */}
         <div className="relative flex flex-col items-center mb-16">
