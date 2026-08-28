@@ -28,6 +28,7 @@
     "react-dom": "19.2.3",
     "react-simple-code-editor": "^0.14.1",
     "recharts": "^3.8.1",
+    "vgpu": "^0.3.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

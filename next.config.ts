@@ -1,7 +1,17 @@
 import type { NextConfig } from "next"
 import { withEve } from "eve/next"
 
-const nextConfig: NextConfig = {}
+const nextConfig: NextConfig = {
+  turbopack: {
+    rules: {
+      // WGSL shader modules for the homepage hero (vgpu)
+      "*.wgsl": {
+        loaders: ["@vgpu/wgsl/loader-webpack"],
+        as: "*.js",
+      },
+    },
+  },
+}
 
 /**
  * `withEve` mounts the agent under `agent/` into this Next.js app.

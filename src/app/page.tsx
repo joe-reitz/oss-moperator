@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { HeroRain } from "@/components/hero-rain"
 
 const ASCII_LOGO = `         @@@                            @@@
         @@  @@                        @@  #
@@ -133,24 +134,30 @@ export default function Home() {
       </div>
 
       <div className="max-w-5xl mx-auto px-6 py-12">
-        {/* Hero: ASCII Art */}
-        <div className="flex flex-col items-center mb-16">
-          <pre className="text-green-400 text-[9px] sm:text-[10px] md:text-xs leading-none mb-2 select-none">
-            {ASCII_LOGO}
-          </pre>
-          <pre className="text-white font-bold text-sm leading-tight mb-2">
-            {ASCII_TITLE}
-          </pre>
-          <p className="text-gray-500 text-sm">Marketing Operations AI Agent</p>
-          <p className="text-gray-600 text-xs mt-2">
-            Open Source &middot;{" "}
-            <a
-              href="https://github.com/joe-reitz/oss-moperator"
-              className="text-gray-500 hover:text-green-400 transition-colors"
+        {/* Hero: ASCII Art casting light into WebGPU digital rain */}
+        <div className="relative flex flex-col items-center mb-16">
+          <HeroRain logoId="hero-ascii-logo" />
+          <div className="relative flex flex-col items-center">
+            <pre
+              id="hero-ascii-logo"
+              className="text-green-400 text-[9px] sm:text-[10px] md:text-xs leading-none mb-2 select-none"
             >
-              github.com/joe-reitz/oss-moperator
-            </a>
-          </p>
+              {ASCII_LOGO}
+            </pre>
+            <pre className="text-white font-bold text-sm leading-tight mb-2">
+              {ASCII_TITLE}
+            </pre>
+            <p className="text-gray-500 text-sm">Marketing Operations AI Agent</p>
+            <p className="text-gray-600 text-xs mt-2">
+              Open Source &middot;{" "}
+              <a
+                href="https://github.com/joe-reitz/oss-moperator"
+                className="text-gray-500 hover:text-green-400 transition-colors"
+              >
+                github.com/joe-reitz/oss-moperator
+              </a>
+            </p>
+          </div>
         </div>
 
         {/* What is mOperator */}
